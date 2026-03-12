@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "YouTube Long-form Automation"
+version = "1.0.0"
+id = "artifacts/youtube-automation"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 23079
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/youtube-automation run dev"
+
+[services.env]
+PORT = "23079"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/youtube-automation", "run", "build"]
+publicDir = "artifacts/youtube-automation/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
