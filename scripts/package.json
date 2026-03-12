@@ -5,7 +5,12 @@
   "type": "module",
   "scripts": {
     "hello": "tsx ./src/hello.ts",
+    "test-video": "tsx ./src/test-video.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/integrations-openai-ai-server": "workspace:*",
+    "openai": "^6.27.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",

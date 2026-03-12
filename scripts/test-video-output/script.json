@@ -1,0 +1,41 @@
+{
+  "title": "영끌족의 현실: 왜 우리는 끝까지 끌어당겼을까",
+  "sections": [
+    {
+      "id": 1,
+      "narration": "집을 사기 위해 미래의 월급까지 당겨 쓰는 사람들, ‘영끌족’이 늘었습니다. 그런데 묻고 싶어요. 그 선택은 ‘용기’였을까요, 아니면 ‘공포’였을까요?",
+      "imagePrompt": "A young Korean adult sitting alone at a small apartment kitchen table at night, bills and loan statements spread out, laptop open with real estate chart dropping, dim overhead light casting harsh shadows, rain on the window, cinematic dark moody atmosphere, 16:9 aspect ratio, professional photography style, ultra realistic, shallow depth of field",
+      "subtitleHighlight": "영끌, 용기인가 공포인가"
+    },
+    {
+      "id": 2,
+      "narration": "영끌은 종종 ‘상승장 기억’에서 시작됩니다. 주변이 다 오르는데 나만 뒤처질까 봐, 우리는 손실을 피하려는 본능—FOMO에 끌려 더 큰 레버리지를 잡죠.",
+      "imagePrompt": "Crowded subway in Seoul during rush hour, commuters staring at smartphones showing rising real estate prices and social media posts about home purchases, anxious facial expressions, reflections on train windows, cinematic dark moody atmosphere, 16:9 aspect ratio, professional photography style, ultra realistic, high contrast lighting",
+      "subtitleHighlight": "FOMO와 상승장 기억"
+    },
+    {
+      "id": 3,
+      "narration": "문제는 대출이 ‘숫자’가 아니라 ‘생활’이 된다는 겁니다. 금리 1%p가 오르면 월 상환액은 계단처럼 뛰고, 여유자금은 사라지며 선택지는 급격히 좁아집니다.",
+      "imagePrompt": "Close-up of hands holding a calculator and bank loan contract, next to a calendar with multiple due dates circled in red, a coffee cup gone cold, a smartphone notification about interest rate increase, cinematic dark moody atmosphere, 16:9 aspect ratio, professional photography style, ultra realistic macro details",
+      "subtitleHighlight": "금리 1%p의 충격"
+    },
+    {
+      "id": 4,
+      "narration": "그래도 우리는 쉽게 멈추지 못해요. 이미 들어간 돈과 시간을 합리화하는 ‘매몰비용’ 때문에, 버티기가 전략이 아니라 습관이 되어버립니다.",
+      "imagePrompt": "A person standing in a dim hallway facing a closed apartment door, holding a bundle of keys and a crumpled bank notice, tense posture, long shadow on the wall, muted colors, cinematic dark moody atmosphere, 16:9 aspect ratio, professional photography style, ultra realistic, dramatic side lighting",
+      "subtitleHighlight": "매몰비용, 멈추지 못함"
+    },
+    {
+      "id": 5,
+      "narration": "영끌의 현실은 ‘집’이 아니라 ‘불확실성’과의 동거입니다. 작은 변동에도 잠을 설치고, 관계와 건강이 먼저 흔들리며, 삶의 만족도가 조용히 떨어지죠.",
+      "imagePrompt": "A young couple in a small living room at night, sitting apart in silence, one person staring at the ceiling, the other looking at a phone with overdue bills, city lights outside the window, tense atmosphere, cinematic dark moody atmosphere, 16:9 aspect ratio, professional photography style, ultra realistic, soft grain, low key lighting",
+      "subtitleHighlight": "불확실성과의 동거"
+    },
+    {
+      "id": 6,
+      "narration": "교훈은 단순합니다. 레버리지는 ‘기회’가 아니라 ‘리스크의 속도’를 키웁니다. 그래서 가장 먼저 점검해야 할 건, 집값이 아니라 내가 버틸 수 있는 현금흐름입니다.",
+      "imagePrompt": "A calm morning scene with a person reviewing a simple budget notebook and emergency fund savings on a desk, soft sunlight through blinds, a small plant, minimalistic tidy space suggesting control and clarity, cinematic dark moody atmosphere but with subtle hope, 16:9 aspect ratio, professional photography style, ultra realistic, shallow depth of field",
+      "subtitleHighlight": "현금흐름부터 점검"
+    }
+  ]
+}
