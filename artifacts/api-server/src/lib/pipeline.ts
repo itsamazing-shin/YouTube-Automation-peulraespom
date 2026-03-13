@@ -421,7 +421,7 @@ async function generateScript(
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
-  const sectionCount = isShorts ? 3 : duration === "1min" ? 8 : duration === "5min" ? 20 : duration === "10min" ? 30 : 40;
+  const sectionCount = isShorts ? 3 : duration === "1min" ? 8 : duration === "5min" ? 20 : duration === "10min" ? 40 : 55;
 
   const narrationGuide = isShorts
     ? "반드시 2~3문장, 총 50~80자. 짧고 임팩트 있게."
