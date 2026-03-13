@@ -634,7 +634,7 @@ async function composeSectionVideo(
     : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
 
   const hasLogo = logoPath && fs.existsSync(logoPath);
-  const logoSize = isVertical ? 80 : 100;
+  const logoSize = isVertical ? 160 : 200;
 
   let filterComplex =
     `[0:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
@@ -691,13 +691,20 @@ async function overlayTextOnImage(
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
   const { line1, line2 } = splitThumbnailTwoLines(text);
-  const fontSize = isVertical ? 80 : 90;
-  const borderW = Math.max(6, Math.round(fontSize * 0.09));
-  const lineHeight = Math.round(fontSize * 1.2);
-  const bottomMargin = isVertical ? 120 : 80;
+  const line1FontSize = isVertical ? 100 : 120;
+  const line2FontSize = isVertical ? 85 : 100;
+  const borderW1 = Math.max(8, Math.round(line1FontSize * 0.1));
+  const borderW2 = Math.max(7, Math.round(line2FontSize * 0.1));
+  const line2LineHeight = Math.round(line2FontSize * 1.25);
+  const line1LineHeight = Math.round(line1FontSize * 1.25);
+  const bottomMargin = isVertical ? 100 : 70;
   const line2Y = `h-${bottomMargin}`;
-  const line1Y = `h-${bottomMargin + lineHeight}`;
-  const gradientH = bottomMargin + lineHeight * 2 + 60;
+  const line1Y = `h-${bottomMargin + line2LineHeight + 10}`;
+  const gradientH = bottomMargin + line2LineHeight + line1LineHeight + 80;
+
+  const hasLogo = logoPath && fs.existsSync(logoPath);
+  const logoW = isVertical ? 180 : 220;
+  const logoH = isVertical ? 140 : 170;
 
   const safeLine1 = sanitizeForFFmpeg(line1);
   const safeLine2 = sanitizeForFFmpeg(line2);
@@ -705,47 +712,36 @@ async function overlayTextOnImage(
   let inputs = ["-y", "-i", inputPath];
   let filterParts: string[] = [];
 
-  if (logoPath && fs.existsSync(logoPath)) {
-    inputs.push("-i", logoPath);
+  const textFilters =
+    `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${line1FontSize}` +
+    `:fontcolor=black:x=(w-text_w)/2+4:y=${line1Y}+4,` +
+    `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${line1FontSize}` +
+    `:fontcolor=#FFFF00:borderw=${borderW1}:bordercolor=black` +
+    `:shadowcolor=black@0.9:shadowx=4:shadowy=4` +
+    `:x=(w-text_w)/2:y=${line1Y},` +
+    `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${line2FontSize}` +
+    `:fontcolor=black:x=(w-text_w)/2+3:y=${line2Y}+3,` +
+    `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${line2FontSize}` +
+    `:fontcolor=#FFFFFF:borderw=${borderW2}:bordercolor=black` +
+    `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
+    `:x=(w-text_w)/2:y=${line2Y}`;
+
+  if (hasLogo) {
+    inputs.push("-i", logoPath!);
     filterParts.push(
+      `[1:v]scale=${logoW}:-1:force_original_aspect_ratio=decrease[logo]`,
       `[0:v]drawbox=y=ih-${gradientH}:width=iw:height=${gradientH}:color=black@0.55:t=fill[bg]`,
-      `[bg][1:v]overlay=20:20:format=auto[withlogo]`,
-    );
-    let lastLabel = "[withlogo]";
-    filterParts.push(
-      `${lastLabel}drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=black:x=(w-text_w)/2+3:y=${line1Y}+3,` +
-      `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=#FFFF00:borderw=${borderW}:bordercolor=black` +
-      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
-      `:x=(w-text_w)/2:y=${line1Y},` +
-      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=black:x=(w-text_w)/2+3:y=${line2Y}+3,` +
-      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=#FFFFFF:borderw=${borderW}:bordercolor=black` +
-      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
-      `:x=(w-text_w)/2:y=${line2Y}`
+      `[bg][logo]overlay=20:20:format=auto[withlogo]`,
+      `[withlogo]${textFilters}`,
     );
   } else {
-    let filter =
+    filterParts.push(
       `[0:v]drawbox=y=ih-${gradientH}:width=iw:height=${gradientH}:color=black@0.55:t=fill,` +
-      `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=black:x=(w-text_w)/2+3:y=${line1Y}+3,` +
-      `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=#FFFF00:borderw=${borderW}:bordercolor=black` +
-      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
-      `:x=(w-text_w)/2:y=${line1Y},` +
-      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=black:x=(w-text_w)/2+3:y=${line2Y}+3,` +
-      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=#FFFFFF:borderw=${borderW}:bordercolor=black` +
-      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
-      `:x=(w-text_w)/2:y=${line2Y}`;
-    filterParts.push(filter);
+      textFilters,
+    );
   }
 
   const filterComplex = filterParts.join(";");
-  const hasLogo = logoPath && fs.existsSync(logoPath);
 
   await execFileAsync("ffmpeg", [
     ...inputs,
