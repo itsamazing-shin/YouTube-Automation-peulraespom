@@ -1278,9 +1278,9 @@ export async function generateVideo(
       koreanError = "이미지 생성이 안전 정책에 의해 차단되었습니다. 다른 주제나 프롬프트로 다시 시도해주세요.";
     } else if (koreanError.includes("rate limit") || koreanError.includes("429")) {
       koreanError = "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
-    } else if (koreanError.includes("insufficient_quota") || koreanError.includes("billing")) {
-      koreanError = "API 크레딧이 부족합니다. 설정에서 API 키를 확인해주세요.";
-    } else if (koreanError.includes("Invalid API Key") || koreanError.includes("401")) {
+    } else if (koreanError.includes("quota_exceeded") || koreanError.includes("insufficient_quota") || koreanError.includes("billing")) {
+      koreanError = "API 크레딧이 부족합니다. ElevenLabs 크레딧을 확인하거나 새 API 키를 입력해주세요.";
+    } else if (koreanError.includes("Invalid API Key") || (koreanError.includes("401") && !koreanError.includes("quota"))) {
       koreanError = "API 키가 유효하지 않습니다. 설정에서 올바른 키를 입력해주세요.";
     }
     await db.update(projects).set({
