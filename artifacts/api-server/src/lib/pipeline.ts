@@ -78,7 +78,7 @@ JSON 형식:
   "sections": [
     {
       "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
-      "imagePrompt": "English image prompt for this scene. ${styleMap[visualStyle] || styleMap.cinematic}",
+      "imagePrompt": "English-only image prompt for this scene. IMPORTANT: Do NOT include any Korean text, letters, signs, or writing in the image. No text overlay. Visual scene only. Style: ${styleMap[visualStyle] || styleMap.cinematic}",
       "subtitleHighlight": "핵심 자막 (짧은 문구)",
       "duration": ${isShorts ? 15 : 30}
     }
@@ -141,6 +141,50 @@ async function generateTTS(
 
   const buffer = Buffer.from(await response.arrayBuffer());
   fs.writeFileSync(outputPath, buffer);
+}
+
+interface WhisperSegment {
+  text: string;
+  start: number;
+  end: number;
+}
+
+async function transcribeWithWhisper(
+  audioPath: string,
+  apiKey: string,
+  baseUrl: string = "https://api.openai.com/v1",
+): Promise<WhisperSegment[]> {
+  const formData = new FormData();
+  const audioBuffer = fs.readFileSync(audioPath);
+  const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+  formData.append("file", audioBlob, path.basename(audioPath));
+  formData.append("model", "whisper-1");
+  formData.append("language", "ko");
+  formData.append("response_format", "verbose_json");
+  formData.append("timestamp_granularities[]", "segment");
+
+  const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    console.warn("Whisper transcription failed, falling back to estimation:", await response.text());
+    return [];
+  }
+
+  const data = await response.json();
+  if (data.segments && Array.isArray(data.segments)) {
+    return data.segments.map((seg: any) => ({
+      text: seg.text.trim(),
+      start: seg.start,
+      end: seg.end,
+    }));
+  }
+  return [];
 }
 
 async function generateImage(
@@ -266,6 +310,40 @@ function splitNarrationToSubtitles(narration: string, totalDuration: number, isV
   return subtitles;
 }
 
+function whisperSegmentsToSubtitles(segments: WhisperSegment[], isVertical: boolean): Array<{ text: string; start: number; end: number }> {
+  const maxCharsPerLine = isVertical ? 12 : 20;
+  const result: Array<{ text: string; start: number; end: number }> = [];
+
+  for (const seg of segments) {
+    const text = seg.text.trim();
+    if (!text) continue;
+
+    if (text.length <= maxCharsPerLine) {
+      result.push({ text, start: seg.start, end: seg.end });
+    } else {
+      const segDur = seg.end - seg.start;
+      const lines: string[] = [];
+      let remaining = text;
+      while (remaining.length > maxCharsPerLine) {
+        const spacePos = remaining.lastIndexOf(" ", maxCharsPerLine);
+        const splitPos = spacePos > maxCharsPerLine * 0.3 ? spacePos : maxCharsPerLine;
+        lines.push(remaining.slice(0, splitPos).trim());
+        remaining = remaining.slice(splitPos).trim();
+      }
+      if (remaining.length > 0) lines.push(remaining);
+      const lineDur = segDur / lines.length;
+      for (let j = 0; j < lines.length; j++) {
+        result.push({
+          text: lines[j],
+          start: seg.start + j * lineDur,
+          end: seg.start + (j + 1) * lineDur,
+        });
+      }
+    }
+  }
+  return result;
+}
+
 async function composeSectionVideo(
   imagePath: string,
   audioPath: string,
@@ -273,6 +351,7 @@ async function composeSectionVideo(
   audioDuration: number,
   isVertical: boolean,
   narrationText: string,
+  whisperSegments?: WhisperSegment[],
 ): Promise<void> {
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
@@ -285,7 +364,9 @@ async function composeSectionVideo(
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
-  const subtitles = splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
+  const subtitles = whisperSegments && whisperSegments.length > 0
+    ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
+    : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
 
   let filterComplex =
     `[0:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
@@ -387,13 +468,21 @@ export async function generateVideo(
 
       const audioDuration = await getAudioDuration(audioPath);
 
+      await updateProgress(projectId, Math.round(pctBase + 5), `섹션 ${i + 1}/${script.sections.length}: 자막 타이밍 분석 중...`);
+      let whisperSegments: WhisperSegment[] = [];
+      try {
+        whisperSegments = await transcribeWithWhisper(audioPath, openaiKey, openaiBaseUrl);
+      } catch (e) {
+        console.warn(`Whisper failed for section ${i}, using estimation:`, e);
+      }
+
       await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 생성 중...`);
       const imagePath = path.join(projectDir, `image_${i}.png`);
       await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
-      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration);
+      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments);
 
       sectionVideos.push(sectionPath);
     }
