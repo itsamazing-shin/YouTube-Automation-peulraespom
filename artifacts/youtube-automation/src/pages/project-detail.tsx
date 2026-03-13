@@ -3,7 +3,9 @@ import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText } from "lucide-react";
+import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText, Image, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, '/');
@@ -48,6 +50,8 @@ export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [thumbnailPrompt, setThumbnailPrompt] = useState("");
+  const [isRegeneratingThumb, setIsRegeneratingThumb] = useState(false);
 
   const { data: project, isLoading } = useQuery<ProjectDetail>({
     queryKey: ["project", id],
@@ -181,6 +185,72 @@ export default function ProjectDetail() {
                   MP4 다운로드
                 </Button>
               </a>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {project.status === "completed" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Image className="w-5 h-5" />
+              썸네일
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {project.thumbnailUrl && (
+              <img
+                src={`${API_BASE}${project.thumbnailUrl}?t=${Date.now()}`}
+                alt="썸네일"
+                className="rounded-lg w-full max-w-md mx-auto"
+              />
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">썸네일 프롬프트 (직접 입력)</label>
+              <Textarea
+                placeholder="원하는 썸네일을 설명하세요. 예: 놀란 표정의 남자가 돈다발을 보고 있는 장면, 배경은 빨간색, '충격! 이게 가능?' 텍스트"
+                value={thumbnailPrompt}
+                onChange={(e) => setThumbnailPrompt(e.target.value)}
+                rows={3}
+                className="resize-none"
+              />
+              <Button
+                onClick={async () => {
+                  if (!thumbnailPrompt.trim()) {
+                    toast({ title: "프롬프트를 입력해주세요", variant: "destructive" });
+                    return;
+                  }
+                  setIsRegeneratingThumb(true);
+                  try {
+                    const res = await fetch(`${API_BASE}/projects/${id}/regenerate-thumbnail`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ prompt: thumbnailPrompt }),
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(err.error || "Failed");
+                    }
+                    queryClient.invalidateQueries({ queryKey: ["project", id] });
+                    toast({ title: "썸네일 재생성 완료!" });
+                  } catch (err: any) {
+                    toast({ title: "썸네일 생성 실패", description: err.message, variant: "destructive" });
+                  } finally {
+                    setIsRegeneratingThumb(false);
+                  }
+                }}
+                disabled={isRegeneratingThumb}
+                variant="outline"
+                className="w-full"
+              >
+                {isRegeneratingThumb ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4 mr-2" />
+                )}
+                {isRegeneratingThumb ? "썸네일 생성 중..." : "썸네일 재생성"}
+              </Button>
             </div>
           </CardContent>
         </Card>

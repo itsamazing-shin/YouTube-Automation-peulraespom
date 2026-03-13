@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { projects, settings } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { generateVideo } from "../lib/pipeline";
+import { generateVideo, regenerateThumbnail } from "../lib/pipeline";
 
 const router = Router();
 
@@ -106,6 +106,41 @@ router.post("/projects/:id/generate", async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ error: "Failed to start generation" });
+  }
+});
+
+router.post("/projects/:id/regenerate-thumbnail", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const { prompt } = req.body;
+    if (!prompt?.trim()) return res.status(400).json({ error: "썸네일 프롬프트를 입력해주세요." });
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const allSettings = await db.select().from(settings);
+    const settingsMap: Record<string, string> = {};
+    for (const s of allSettings) settingsMap[s.key] = s.value;
+
+    if (!settingsMap.OPENAI_API_KEY) {
+      settingsMap.OPENAI_API_KEY = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+    }
+    if (!settingsMap.OPENAI_BASE_URL) {
+      settingsMap.OPENAI_BASE_URL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.openai.com/v1";
+    }
+
+    if (!settingsMap.OPENAI_API_KEY) {
+      return res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다." });
+    }
+
+    const thumbnailUrl = await regenerateThumbnail(projectId, prompt, settingsMap.OPENAI_API_KEY, settingsMap.OPENAI_BASE_URL);
+    if (thumbnailUrl) {
+      res.json({ success: true, thumbnailUrl });
+    } else {
+      res.status(500).json({ error: "썸네일 생성에 실패했습니다." });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to regenerate thumbnail" });
   }
 });
 

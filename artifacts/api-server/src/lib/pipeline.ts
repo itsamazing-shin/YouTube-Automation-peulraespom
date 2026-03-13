@@ -12,6 +12,29 @@ const execFileAsync = promisify(execFile);
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+export async function regenerateThumbnail(
+  projectId: number,
+  customPrompt: string,
+  openaiKey: string,
+  openaiBaseUrl: string = "https://api.openai.com/v1",
+): Promise<string | null> {
+  const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
+  if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+
+  const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
+  await generateImage(customPrompt, thumbPath, openaiKey, false, openaiBaseUrl, "medium");
+
+  if (fs.existsSync(thumbPath)) {
+    const relativePath = `/files/project_${projectId}/thumbnail_${projectId}.png`;
+    await db.update(projects).set({
+      thumbnailUrl: relativePath,
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+    return relativePath;
+  }
+  return null;
+}
+
 async function updateProgress(projectId: number, progress: number, message: string) {
   await db.update(projects).set({
     progress,
