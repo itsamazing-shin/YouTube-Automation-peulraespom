@@ -187,7 +187,56 @@ async function transcribeWithWhisper(
   return [];
 }
 
-async function generateImage(
+async function generateImageGemini(
+  prompt: string,
+  outputPath: string,
+  isVertical: boolean,
+): Promise<void> {
+  const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+
+  if (!geminiBaseUrl || !geminiApiKey) {
+    throw new Error("Gemini AI integration not configured");
+  }
+
+  const aspectRatio = isVertical ? "9:16" : "16:9";
+
+  const response = await fetch(
+    `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["IMAGE", "TEXT"],
+          imageGenerationConfig: {
+            aspectRatio,
+          },
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Gemini image generation error: ${response.status} - ${err}`);
+  }
+
+  const data = await response.json();
+  const candidates = data.candidates;
+  if (candidates && candidates[0]?.content?.parts) {
+    for (const part of candidates[0].content.parts) {
+      if (part.inlineData) {
+        fs.writeFileSync(outputPath, Buffer.from(part.inlineData.data, "base64"));
+        return;
+      }
+    }
+  }
+  throw new Error("Gemini returned no image data");
+}
+
+async function generateImageOpenAI(
   prompt: string,
   outputPath: string,
   apiKey: string,
@@ -222,6 +271,22 @@ async function generateImage(
   } else if (data.data[0].url) {
     const imgRes = await fetch(data.data[0].url);
     fs.writeFileSync(outputPath, Buffer.from(await imgRes.arrayBuffer()));
+  }
+}
+
+async function generateImage(
+  prompt: string,
+  outputPath: string,
+  apiKey: string,
+  isVertical: boolean,
+  baseUrl: string = "https://api.openai.com/v1",
+  quality: "low" | "medium" | "high" = "low",
+): Promise<void> {
+  try {
+    await generateImageGemini(prompt, outputPath, isVertical);
+  } catch (e) {
+    console.warn("Gemini image generation failed, falling back to OpenAI:", (e as Error).message);
+    await generateImageOpenAI(prompt, outputPath, apiKey, isVertical, baseUrl, quality);
   }
 }
 

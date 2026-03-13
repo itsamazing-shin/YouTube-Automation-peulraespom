@@ -59,10 +59,11 @@ artifacts-monorepo/
 
 1. **Script Generation** (GPT-4o): Topic → structured JSON script with sections
 2. **TTS** (ElevenLabs): Per-section narration audio generation
-3. **Image Generation** (gpt-image-1): Per-section scene images
-4. **Video Composition** (FFmpeg): Ken Burns effect + subtitle overlay per section
-5. **Concatenation** (FFmpeg): Merge all sections into final MP4
-6. **Thumbnail** (gpt-image-1): Auto-generated thumbnail
+3. **Subtitle Timing** (Whisper): Accurate speech-to-text timing via OpenAI Whisper
+4. **Image Generation** (Gemini → OpenAI fallback): Per-section scene images via Gemini 2.5 Flash Image, falls back to gpt-image-1
+5. **Video Composition** (FFmpeg): Ken Burns effect + timed subtitle overlay per section
+6. **Concatenation** (FFmpeg): Merge all sections into final MP4
+7. **Thumbnail** (gpt-image-1): Auto-generated YouTube-style thumbnail (medium quality)
 
 ## Key Design Decisions
 
