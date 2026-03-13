@@ -3,6 +3,31 @@ import { db } from "@workspace/db";
 import { projects, settings } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { generateVideo, regenerateThumbnail } from "../lib/pipeline";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+const OUTPUT_DIR = path.join(process.cwd(), "output");
+if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const refDir = path.join(OUTPUT_DIR, "reference_images");
+      if (!fs.existsSync(refDir)) fs.mkdirSync(refDir, { recursive: true });
+      cb(null, refDir);
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".png";
+      cb(null, `ref_${Date.now()}${ext}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("이미지 파일만 업로드 가능합니다."));
+  },
+});
 
 const router = Router();
 
@@ -27,7 +52,7 @@ router.get("/projects/:id", async (req, res) => {
 
 router.post("/projects", async (req, res) => {
   try {
-    const { title, topic, videoType, visualStyle, duration, tone, referenceUrl } = req.body;
+    const { title, topic, videoType, visualStyle, duration, tone, referenceUrl, referenceImageUrl } = req.body;
     if (!topic?.trim()) return res.status(400).json({ error: "Topic is required" });
 
     const [project] = await db.insert(projects).values({
@@ -38,6 +63,7 @@ router.post("/projects", async (req, res) => {
       duration: duration || "10min",
       tone: tone || "calm",
       referenceUrl: referenceUrl || null,
+      referenceImageUrl: referenceImageUrl || null,
       status: "draft",
     }).returning();
 
@@ -141,6 +167,16 @@ router.post("/projects/:id/regenerate-thumbnail", async (req, res) => {
     }
   } catch (err: any) {
     res.status(500).json({ error: err.message || "Failed to regenerate thumbnail" });
+  }
+});
+
+router.post("/upload-reference-image", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "이미지 파일이 필요합니다." });
+    const relativePath = `/files/reference_images/${req.file.filename}`;
+    res.json({ success: true, imageUrl: relativePath });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "업로드 실패" });
   }
 });
 

@@ -48,6 +48,46 @@ export async function regenerateThumbnail(
   return null;
 }
 
+async function analyzeReferenceImage(
+  imagePath: string,
+  apiKey: string,
+  baseUrl: string = "https://api.openai.com/v1",
+): Promise<string> {
+  const imageData = fs.readFileSync(imagePath);
+  const base64 = imageData.toString("base64");
+  const mimeType = imagePath.endsWith(".png") ? "image/png" : "image/jpeg";
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert visual style analyst. Analyze the given image and describe its visual style in detail for use as image generation guidance. Focus on: art style, color palette, line work, character design, composition, mood/atmosphere, rendering technique. Output in English only. Be specific and concise (3-5 sentences).",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Analyze this reference image's visual style. Describe the art style, colors, line work, character design, and overall aesthetic so that new images can be generated in the same style." },
+            { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64}` } },
+          ],
+        },
+      ],
+      max_tokens: 300,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) throw new Error(`Vision API failed: ${response.status}`);
+  const data: any = await response.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
 async function updateProgress(projectId: number, progress: number, message: string) {
   await db.update(projects).set({
     progress,
@@ -168,6 +208,7 @@ async function generateScript(
   apiKey: string,
   baseUrl: string = "https://api.openai.com/v1",
   commentAnalysis: string = "",
+  referenceStyleDesc: string = "",
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
@@ -198,6 +239,7 @@ ${commentAnalysis ? `\n📊 시청자 댓글 분석 결과:\n${commentAnalysis}\
 ${sectionCount}개 섹션으로 구성된 ${isShorts ? "유튜브 쇼츠(세로형 60초)" : "유튜브 롱폼 영상"} 대본을 작성하세요.
 
 이미지 프롬프트는 "${styleMap[visualStyle] || styleMap.cinematic}" 스타일로 작성하세요.
+${referenceStyleDesc ? `\n🎨 참조 이미지 스타일 분석 결과:\n${referenceStyleDesc}\n\n위 스타일을 최대한 반영하여 모든 섹션의 이미지 프롬프트를 작성하세요. 참조 이미지의 화풍, 색감, 선 스타일, 캐릭터 디자인을 일관되게 유지하세요.\n` : ""}
 
 JSON 형식:
 {
@@ -750,6 +792,20 @@ export async function generateVideo(
       }
     }
 
+    let referenceStyleDesc = "";
+    if (project.referenceImageUrl) {
+      const refImgPath = path.join(OUTPUT_DIR, project.referenceImageUrl.replace("/files/", ""));
+      if (fs.existsSync(refImgPath)) {
+        await updateProgress(projectId, 3, "참조 이미지 스타일 분석 중...");
+        try {
+          referenceStyleDesc = await analyzeReferenceImage(refImgPath, openaiKey, openaiBaseUrl);
+          console.log("참조 이미지 스타일 분석 완료:", referenceStyleDesc.substring(0, 100));
+        } catch (e) {
+          console.warn("참조 이미지 분석 실패, 건너뜀:", e);
+        }
+      }
+    }
+
     await updateProgress(projectId, 5, "AI 대본 생성 중...");
     const script = await generateScript(
       project.topic,
@@ -761,6 +817,7 @@ export async function generateVideo(
       openaiKey,
       openaiBaseUrl,
       commentAnalysis,
+      referenceStyleDesc,
     );
 
     await db.update(projects).set({

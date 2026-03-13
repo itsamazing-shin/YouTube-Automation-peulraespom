@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Sparkles, Loader2 } from "lucide-react";
+import { ArrowLeft, Sparkles, Loader2, Upload, X, ImageIcon } from "lucide-react";
 import { Link } from "wouter";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, '/');
@@ -19,6 +19,9 @@ export default function CreateVideo() {
   const [visualStyle, setVisualStyle] = useState("cinematic");
   const [duration, setDuration] = useState("10min");
   const [tone, setTone] = useState("calm");
+  const [referenceImageUrl, setReferenceImageUrl] = useState<string | null>(null);
+  const [referenceImagePreview, setReferenceImagePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   const handleVideoTypeChange = (type: string) => {
     setVideoType(type);
@@ -31,6 +34,36 @@ export default function CreateVideo() {
     }
   };
   const [referenceUrl, setReferenceUrl] = useState("");
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setReferenceImagePreview(URL.createObjectURL(file));
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+      const res = await fetch(`${API_BASE}/upload-reference-image`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      setReferenceImageUrl(data.imageUrl);
+    } catch {
+      setReferenceImagePreview(null);
+      setReferenceImageUrl(null);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeReferenceImage = () => {
+    setReferenceImageUrl(null);
+    setReferenceImagePreview(null);
+  };
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -45,6 +78,7 @@ export default function CreateVideo() {
           duration,
           tone,
           referenceUrl: referenceUrl || undefined,
+          referenceImageUrl: referenceImageUrl || undefined,
         }),
       });
       if (!res.ok) throw new Error("Failed to create");
@@ -162,6 +196,42 @@ export default function CreateVideo() {
               onChange={(e) => setReferenceUrl(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">참고할 유튜브 영상의 URL을 입력하면 스타일을 분석합니다</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>참조 이미지 (선택)</Label>
+            <p className="text-xs text-muted-foreground mb-2">원하는 스타일의 이미지를 업로드하면, AI가 분석해서 비슷한 화풍으로 이미지를 생성합니다</p>
+            {referenceImagePreview ? (
+              <div className="relative inline-block">
+                <img
+                  src={referenceImagePreview}
+                  alt="참조 이미지"
+                  className="w-40 h-28 object-cover rounded-lg border border-border"
+                />
+                {uploading && (
+                  <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 animate-spin text-white" />
+                  </div>
+                )}
+                <button
+                  onClick={removeReferenceImage}
+                  className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 hover:bg-destructive/80"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-border rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors">
+                <ImageIcon className="w-8 h-8 text-muted-foreground mb-2" />
+                <span className="text-sm text-muted-foreground">클릭하여 이미지 업로드</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageUpload}
+                />
+              </label>
+            )}
           </div>
         </CardContent>
       </Card>

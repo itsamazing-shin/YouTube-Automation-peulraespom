@@ -12,6 +12,7 @@ export const projects = pgTable("projects", {
   duration: text("duration").notNull().default("10min"),
   tone: text("tone").notNull().default("calm"),
   referenceUrl: text("reference_url"),
+  referenceImageUrl: text("reference_image_url"),
   scriptJson: jsonb("script_json"),
   thumbnailUrl: text("thumbnail_url"),
   videoUrl: text("video_url"),
