@@ -789,12 +789,13 @@ async function composeMultiImageSectionVideo(
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", `${audioIdx}:a`,
-    "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
+    "-threads", "2",
     outputPath,
-  ], { timeout: 180000 });
+  ], { timeout: 300000 });
 }
 
 function sanitizeForFFmpeg(text: string): string {
@@ -966,12 +967,13 @@ async function composeSectionVideo(
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", "1:a",
-    "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
+    "-threads", "2",
     outputPath,
-  ], { timeout: 120000 });
+  ], { timeout: 300000 });
 }
 
 async function overlayTextOnImage(
@@ -1159,8 +1161,7 @@ async function concatenateVideos(
     await execFileAsync("ffmpeg", [
       "-y", "-f", "concat", "-safe", "0",
       "-i", listPath,
-      "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-      "-c:a", "aac", "-b:a", "128k",
+      "-c", "copy",
       outputPath,
     ], { timeout: 600000 });
   } finally {
@@ -1322,10 +1323,18 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
-      if (sectionImagePaths.length > 1) {
-        await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
-      } else {
-        await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+      try {
+        console.log(`섹션 ${i + 1} 영상 합성 시작 (duration: ${audioDuration}s, images: ${sectionImagePaths.length})`);
+        if (sectionImagePaths.length > 1) {
+          await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+        } else {
+          await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+        }
+        console.log(`섹션 ${i + 1} 영상 합성 완료`);
+      } catch (composeErr: any) {
+        console.error(`섹션 ${i + 1} 영상 합성 실패:`, composeErr.message);
+        if (composeErr.stderr) console.error("FFmpeg stderr:", composeErr.stderr.substring(0, 500));
+        throw composeErr;
       }
 
       sectionVideos.push(sectionPath);
