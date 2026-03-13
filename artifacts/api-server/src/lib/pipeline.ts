@@ -56,6 +56,95 @@ async function updateProgress(projectId: number, progress: number, message: stri
   }).where(eq(projects.id, projectId));
 }
 
+function extractVideoId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+async function fetchYouTubeComments(
+  videoUrl: string,
+  youtubeApiKey: string,
+): Promise<string[]> {
+  const videoId = extractVideoId(videoUrl);
+  if (!videoId) return [];
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=100&order=relevance&textFormat=plainText&key=${youtubeApiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn("YouTube comments fetch failed:", res.status);
+      return [];
+    }
+    const data = await res.json();
+    const comments: string[] = [];
+    for (const item of data.items || []) {
+      const text = item.snippet?.topLevelComment?.snippet?.textDisplay;
+      if (text) comments.push(text);
+    }
+    return comments;
+  } catch (e) {
+    console.warn("YouTube comments fetch error:", e);
+    return [];
+  }
+}
+
+async function analyzeComments(
+  comments: string[],
+  topic: string,
+  apiKey: string,
+  baseUrl: string,
+): Promise<string> {
+  if (comments.length === 0) return "";
+
+  const commentsText = comments.slice(0, 80).map((c, i) => `${i + 1}. ${c}`).join("\n");
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "당신은 유튜브 댓글 분석 전문가입니다. 댓글을 분석해서 시청자들의 핵심 관심 포인트를 요약해주세요.",
+        },
+        {
+          role: "user",
+          content: `주제: "${topic}"
+
+아래는 관련 유튜브 영상의 댓글들입니다. 이 댓글들을 분석해서:
+1. 시청자들이 가장 관심 있어하는 포인트 (3~5개)
+2. 시청자들이 공감하는 감정/반응
+3. 시청자들이 더 알고 싶어하는 내용
+4. 댓글에서 자주 언급되는 키워드
+
+간결하게 요약해주세요 (300자 이내):
+
+${commentsText}`,
+        },
+      ],
+      temperature: 0.3,
+    }),
+  });
+
+  if (!res.ok) {
+    console.warn("Comment analysis failed:", res.status);
+    return "";
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
 interface ScriptSection {
   narration: string;
   imagePrompt: string;
@@ -78,6 +167,7 @@ async function generateScript(
   referenceUrl: string | null,
   apiKey: string,
   baseUrl: string = "https://api.openai.com/v1",
+  commentAnalysis: string = "",
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
@@ -104,7 +194,7 @@ ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시
 
   const userPrompt = `주제: "${topic}"
 ${referenceUrl ? `참고 영상 URL: ${referenceUrl}\n(위 영상은 주제와 톤의 방향성만 참고하세요. 대본 내용, 문장, 구성은 절대 복제하지 마세요. 100% 독창적인 새로운 대본을 작성해야 합니다. 유튜브 저작권 정책을 준수하세요.)` : ""}
-
+${commentAnalysis ? `\n📊 시청자 댓글 분석 결과:\n${commentAnalysis}\n\n위 댓글 분석을 적극 반영하세요. 시청자들이 가장 관심 있어하는 포인트를 중심으로 대본을 구성하고, 댓글에서 나온 공감 포인트나 궁금증을 대본에 녹여내세요. 이렇게 하면 시청자 반응이 좋은 영상이 됩니다.\n` : ""}
 ${sectionCount}개 섹션으로 구성된 ${isShorts ? "유튜브 쇼츠(세로형 60초)" : "유튜브 롱폼 영상"} 대본을 작성하세요.
 
 이미지 프롬프트는 "${styleMap[visualStyle] || styleMap.cinematic}" 스타일로 작성하세요.
@@ -591,6 +681,21 @@ export async function generateVideo(
   const isVertical = project.videoType === "shorts";
 
   try {
+    let commentAnalysis = "";
+    const youtubeApiKey = settingsMap.YOUTUBE_API_KEY;
+    if (project.referenceUrl && youtubeApiKey) {
+      await updateProgress(projectId, 2, "레퍼런스 영상 댓글 분석 중...");
+      try {
+        const comments = await fetchYouTubeComments(project.referenceUrl, youtubeApiKey);
+        if (comments.length > 0) {
+          commentAnalysis = await analyzeComments(comments, project.topic, openaiKey, openaiBaseUrl);
+          console.log(`댓글 ${comments.length}개 분석 완료`);
+        }
+      } catch (e) {
+        console.warn("댓글 분석 실패, 건너뜀:", e);
+      }
+    }
+
     await updateProgress(projectId, 5, "AI 대본 생성 중...");
     const script = await generateScript(
       project.topic,
@@ -601,6 +706,7 @@ export async function generateVideo(
       project.referenceUrl,
       openaiKey,
       openaiBaseUrl,
+      commentAnalysis,
     );
 
     await db.update(projects).set({

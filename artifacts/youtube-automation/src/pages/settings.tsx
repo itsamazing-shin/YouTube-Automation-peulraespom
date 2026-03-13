@@ -45,6 +45,14 @@ const API_KEYS: ApiKeyConfig[] = [
     docsUrl: "https://console.x.ai",
   },
   {
+    key: "YOUTUBE_API_KEY",
+    label: "YouTube Data API 키",
+    description: "레퍼런스 영상 댓글 분석 (시청자 관심 포인트 파악)",
+    placeholder: "AIza...",
+    required: false,
+    docsUrl: "https://console.cloud.google.com/apis/credentials",
+  },
+  {
     key: "PEXELS_API_KEY",
     label: "Pexels API 키",
     description: "무료 스톡 영상/이미지 검색",
