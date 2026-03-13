@@ -4,10 +4,58 @@ import { eq } from "drizzle-orm";
 import type { Project } from "@workspace/db/schema";
 import fs from "fs";
 import path from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 
-const execFileAsync = promisify(execFile);
+function runFFmpeg(args: string[], timeout: number = 300000): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("ffmpeg", args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderrTail = "";
+    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => {
+      const s = d.toString();
+      stderrTail = (stderrTail + s).slice(-2000);
+    });
+    const timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      reject(new Error(`FFmpeg timeout after ${timeout}ms. stderr: ${stderrTail}`));
+    }, timeout);
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ stdout, stderr: stderrTail });
+      else reject(new Error(`FFmpeg exited with code ${code}. stderr: ${stderrTail}`));
+    });
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    proc.stdin.end();
+  });
+}
+
+function runCommand(cmd: string, args: string[], timeout: number = 30000): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    const timer = setTimeout(() => {
+      proc.kill("SIGKILL");
+      reject(new Error(`Command ${cmd} timeout after ${timeout}ms`));
+    }, timeout);
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(`${cmd} exited with code ${code}. stderr: ${stderr.slice(-1000)}`));
+    });
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    proc.stdin.end();
+  });
+}
 
 const OUTPUT_DIR = path.join(process.cwd(), "output");
 if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -615,7 +663,7 @@ async function generateImage(
 
 async function getAudioDuration(filePath: string): Promise<number> {
   try {
-    const { stdout } = await execFileAsync("ffprobe", [
+    const { stdout } = await runCommand("ffprobe", [
       "-i", filePath,
       "-show_entries", "format=duration",
       "-v", "quiet",
@@ -784,7 +832,7 @@ async function composeMultiImageSectionVideo(
 
   const filterComplex = filterParts.join(";");
 
-  await execFileAsync("ffmpeg", [
+  await runFFmpeg([
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", `${audioIdx}:a`,
@@ -795,7 +843,7 @@ async function composeMultiImageSectionVideo(
     "-shortest",
     "-threads", "2",
     outputPath,
-  ], { timeout: 300000 });
+  ], 300000);
 }
 
 function sanitizeForFFmpeg(text: string): string {
@@ -962,7 +1010,7 @@ async function composeSectionVideo(
     inputs.push("-i", logoPath!);
   }
 
-  await execFileAsync("ffmpeg", [
+  await runFFmpeg([
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", "1:a",
@@ -973,7 +1021,7 @@ async function composeSectionVideo(
     "-shortest",
     "-threads", "2",
     outputPath,
-  ], { timeout: 300000 });
+  ], 300000);
 }
 
 async function overlayTextOnImage(
@@ -1039,11 +1087,11 @@ async function overlayTextOnImage(
 
   const filterComplex = filterParts.join(";");
 
-  await execFileAsync("ffmpeg", [
+  await runFFmpeg([
     ...inputs,
     hasLogo ? "-filter_complex" : "-vf", filterComplex,
     outputPath,
-  ], { timeout: 30000 });
+  ], 30000);
 }
 
 function splitThumbnailTwoLines(text: string): { line1: string; line2: string } {
@@ -1158,12 +1206,12 @@ async function concatenateVideos(
   fs.writeFileSync(listPath, listContent);
 
   try {
-    await execFileAsync("ffmpeg", [
+    await runFFmpeg([
       "-y", "-f", "concat", "-safe", "0",
       "-i", listPath,
       "-c", "copy",
       outputPath,
-    ], { timeout: 600000 });
+    ], 600000);
   } finally {
     if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
   }
