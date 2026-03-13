@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, '/');
@@ -198,6 +198,114 @@ export default function Settings() {
         )}
         설정 저장
       </Button>
+
+      <ChannelLogoSection />
     </div>
+  );
+}
+
+function ChannelLogoSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const { data: logoData } = useQuery<{ logoUrl: string | null }>({
+    queryKey: ["channel-logo"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/logo`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("logo", file);
+      const res = await fetch(`${API_BASE}/upload-logo`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      queryClient.invalidateQueries({ queryKey: ["channel-logo"] });
+      toast({ title: "업로드 완료", description: "채널 로고가 저장되었습니다." });
+    } catch {
+      toast({ title: "업로드 실패", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await fetch(`${API_BASE}/logo`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["channel-logo"] });
+      toast({ title: "삭제 완료", description: "채널 로고가 삭제되었습니다." });
+    } catch {
+      toast({ title: "삭제 실패", variant: "destructive" });
+    }
+  };
+
+  const logoUrl = logoData?.logoUrl;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-base">채널 로고</CardTitle>
+          <Badge variant="outline" className="text-xs">선택</Badge>
+        </div>
+        <CardDescription>썸네일 좌측 상단에 표시될 채널 로고 이미지를 업로드하세요</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-4">
+          {logoUrl ? (
+            <div className="relative w-20 h-20 rounded-lg border border-border overflow-hidden bg-muted flex-shrink-0">
+              <img
+                src={`${API_BASE.replace('/api', '')}${logoUrl}`}
+                alt="채널 로고"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          ) : (
+            <div className="w-20 h-20 rounded-lg border border-dashed border-border flex items-center justify-center bg-muted/30 flex-shrink-0">
+              <ImageIcon className="w-8 h-8 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              {logoUrl ? "로고 변경" : "로고 업로드"}
+            </Button>
+            {logoUrl && (
+              <Button variant="ghost" size="sm" onClick={handleDelete} className="text-destructive hover:text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" />
+                삭제
+              </Button>
+            )}
+            <p className="text-xs text-muted-foreground">PNG/JPG, 최대 5MB</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,5 +1,5 @@
 import { db } from "@workspace/db";
-import { projects } from "@workspace/db/schema";
+import { projects, settings } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import type { Project } from "@workspace/db/schema";
 import fs from "fs";
@@ -33,7 +33,13 @@ export async function regenerateThumbnail(
 
   if (fs.existsSync(thumbRawPath)) {
     try {
-      await overlayTextOnImage(thumbRawPath, thumbPath, thumbnailText, false);
+      let logoFilePath: string | undefined;
+      const [logoRow] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
+      if (logoRow?.value) {
+        const lp = path.join(OUTPUT_DIR, logoRow.value.replace("/files/", ""));
+        if (fs.existsSync(lp)) logoFilePath = lp;
+      }
+      await overlayTextOnImage(thumbRawPath, thumbPath, thumbnailText, false, logoFilePath);
     } catch (e) {
       console.warn("Text overlay failed, using raw image:", e);
       fs.copyFileSync(thumbRawPath, thumbPath);
@@ -724,10 +730,11 @@ async function overlayTextOnImage(
   }
 
   const filterComplex = filterParts.join(";");
+  const hasLogo = logoPath && fs.existsSync(logoPath);
 
   await execFileAsync("ffmpeg", [
     ...inputs,
-    "-vf", filterComplex,
+    hasLogo ? "-filter_complex" : "-vf", filterComplex,
     outputPath,
   ], { timeout: 30000 });
 }
@@ -990,7 +997,15 @@ export async function generateVideo(
     try {
       const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
       await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
-      await overlayTextOnImage(thumbRawPath, thumbPath, script.thumbnailText || script.title, false);
+
+      let logoFilePath: string | undefined;
+      const logoSetting = settingsMap.CHANNEL_LOGO;
+      if (logoSetting) {
+        const lp = path.join(OUTPUT_DIR, logoSetting.replace("/files/", ""));
+        if (fs.existsSync(lp)) logoFilePath = lp;
+      }
+
+      await overlayTextOnImage(thumbRawPath, thumbPath, script.thumbnailText || script.title, false, logoFilePath);
     } catch (e) {
       console.warn("Thumbnail generation failed, skipping:", e);
     }

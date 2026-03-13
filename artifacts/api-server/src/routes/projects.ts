@@ -180,6 +180,55 @@ router.post("/upload-reference-image", upload.single("image"), async (req, res) 
   }
 });
 
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const logoDir = path.join(OUTPUT_DIR, "logos");
+      if (!fs.existsSync(logoDir)) fs.mkdirSync(logoDir, { recursive: true });
+      cb(null, logoDir);
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".png";
+      cb(null, `channel_logo${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+router.post("/upload-logo", logoUpload.single("logo"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "로고 파일이 필요합니다." });
+    const relativePath = `/files/logos/${req.file.filename}`;
+    await db.insert(settings).values({ key: "CHANNEL_LOGO", value: relativePath })
+      .onConflictDoUpdate({ target: settings.key, set: { value: relativePath } });
+    res.json({ success: true, logoUrl: relativePath });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "로고 업로드 실패" });
+  }
+});
+
+router.get("/logo", async (_req, res) => {
+  try {
+    const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
+    res.json({ logoUrl: row?.value || null });
+  } catch {
+    res.json({ logoUrl: null });
+  }
+});
+
+router.delete("/logo", async (_req, res) => {
+  try {
+    await db.delete(settings).where(eq(settings.key, "CHANNEL_LOGO"));
+    const logoDir = path.join(OUTPUT_DIR, "logos");
+    if (fs.existsSync(logoDir)) {
+      for (const f of fs.readdirSync(logoDir)) fs.unlinkSync(path.join(logoDir, f));
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete("/projects/:id", async (req, res) => {
   try {
     const projectId = parseInt(req.params.id);
