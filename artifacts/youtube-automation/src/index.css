@@ -201,7 +201,13 @@
     @apply font-sans antialiased bg-background text-foreground;
   }
 
-  *:focus-visible {
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible,
+  [role="button"]:focus-visible,
+  [tabindex]:focus-visible {
     @apply ring-2 ring-ring ring-offset-2 ring-offset-background;
   }
 }
