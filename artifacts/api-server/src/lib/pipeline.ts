@@ -181,6 +181,46 @@ function extractVideoId(url: string): string | null {
   return null;
 }
 
+async function fetchYouTubeVideoInfo(
+  videoUrl: string,
+  youtubeApiKey: string,
+): Promise<{ title: string; description: string; captions: string }> {
+  const videoId = extractVideoId(videoUrl);
+  if (!videoId) return { title: "", description: "", captions: "" };
+
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${videoId}&key=${youtubeApiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn("YouTube video info fetch failed:", res.status);
+      return { title: "", description: "", captions: "" };
+    }
+    const data = await res.json();
+    const snippet = data.items?.[0]?.snippet;
+    if (!snippet) return { title: "", description: "", captions: "" };
+
+    let captions = "";
+    try {
+      const captionListUrl = `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${youtubeApiKey}`;
+      const captionRes = await fetch(captionListUrl);
+      if (captionRes.ok) {
+        const captionData = await captionRes.json();
+        const captionInfo = captionData.items?.map((c: any) => `${c.snippet?.language}: ${c.snippet?.name}`).join(", ") || "";
+        if (captionInfo) captions = `(자막 존재: ${captionInfo})`;
+      }
+    } catch {}
+
+    return {
+      title: snippet.title || "",
+      description: (snippet.description || "").substring(0, 2000),
+      captions,
+    };
+  } catch (e) {
+    console.warn("YouTube video info fetch error:", e);
+    return { title: "", description: "", captions: "" };
+  }
+}
+
 async function fetchYouTubeComments(
   videoUrl: string,
   youtubeApiKey: string,
@@ -1238,9 +1278,20 @@ export async function generateVideo(
 
   try {
     let commentAnalysis = "";
+    let referenceVideoContext = "";
     const youtubeApiKey = settingsMap.YOUTUBE_API_KEY;
     if (project.referenceUrl && youtubeApiKey) {
-      await updateProgress(projectId, 2, "레퍼런스 영상 댓글 분석 중...");
+      await updateProgress(projectId, 2, "레퍼런스 영상 분석 중...");
+      try {
+        const videoInfo = await fetchYouTubeVideoInfo(project.referenceUrl, youtubeApiKey);
+        if (videoInfo.title) {
+          referenceVideoContext = `🎬 레퍼런스 영상 정보:\n- 제목: ${videoInfo.title}\n- 설명: ${videoInfo.description}\n${videoInfo.captions}\n\n⚠️ 위 레퍼런스 영상의 핵심 내용과 관점을 참고하여 대본을 작성하세요. 영상이 다루는 구체적 사건, 날짜, 수치를 반영하되 100% 독창적으로 재구성하세요.`;
+          console.log(`레퍼런스 영상 정보 취득: "${videoInfo.title}"`);
+        }
+      } catch (e) {
+        console.warn("레퍼런스 영상 정보 취득 실패:", e);
+      }
+
       try {
         const comments = await fetchYouTubeComments(project.referenceUrl, youtubeApiKey);
         if (comments.length > 0) {
@@ -1270,8 +1321,14 @@ export async function generateVideo(
     let latestNewsContext = "";
     try {
       latestNewsContext = await searchLatestNews(project.topic, openaiKey, openaiBaseUrl);
+      if (referenceVideoContext) {
+        latestNewsContext = referenceVideoContext + "\n\n" + latestNewsContext;
+      }
     } catch (e) {
       console.warn("최신 뉴스 검색 실패, 건너뜀:", e);
+      if (referenceVideoContext) {
+        latestNewsContext = referenceVideoContext;
+      }
     }
 
     await updateProgress(projectId, 5, "AI 대본 생성 중...");
