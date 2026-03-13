@@ -196,15 +196,17 @@ async function getAudioDuration(filePath: string): Promise<number> {
 
 function sanitizeForFFmpeg(text: string): string {
   return text
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\'")
+    .replace(/\n/g, " ")
+    .replace(/\r/g, "")
+    .replace(/'/g, "\u2019")
+    .replace(/"/g, "\u201D")
+    .replace(/\\/g, "")
     .replace(/:/g, "\\:")
     .replace(/\[/g, "\\[")
     .replace(/\]/g, "\\]")
     .replace(/;/g, "\\;")
     .replace(/,/g, "\\,")
-    .replace(/\n/g, " ")
-    .replace(/\r/g, "");
+    .replace(/%/g, "%%");
 }
 
 function splitNarrationToSubtitles(narration: string, totalDuration: number): Array<{ text: string; start: number; end: number }> {
