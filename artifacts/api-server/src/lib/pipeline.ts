@@ -521,6 +521,7 @@ JSON 형식:
         { role: "user", content: userPrompt },
       ],
       temperature: 1.0,
+      max_tokens: 16000,
       response_format: { type: "json_object" },
     }),
   });
@@ -532,7 +533,81 @@ JSON 형식:
 
   const data = await response.json();
   const content = data.choices[0].message.content;
-  return JSON.parse(content);
+  const script: VideoScript = JSON.parse(content);
+
+  console.log(`[generateScript] 요청 섹션: ${sectionCount}, 생성된 섹션: ${script.sections.length}`);
+
+  if (script.sections.length < sectionCount) {
+    const remaining = sectionCount - script.sections.length;
+    console.log(`[generateScript] ${remaining}개 섹션 추가 생성 시작...`);
+
+    const batchSize = 20;
+    let currentSections = script.sections.length;
+
+    while (currentSections < sectionCount) {
+      const needed = Math.min(batchSize, sectionCount - currentSections);
+      const existingSummary = script.sections.map((s, idx) => `섹션${idx + 1}: ${s.narration.substring(0, 30)}...`).join("\n");
+
+      const continuePrompt = `이전 대본에서 ${currentSections}개 섹션이 작성되었습니다. 이어서 ${needed}개 섹션을 추가로 작성하세요.
+
+기존 섹션 요약:
+${existingSummary}
+
+⚠️ 기존 내용과 중복되지 않는 새로운 내용으로 이어서 작성하세요.
+주제: "${topic}"
+이미지 스타일: ${styleMap[visualStyle] || styleMap.cinematic}
+${narrationGuide}
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{
+  "sections": [
+    { "narration": "...", "imagePrompt": "...", "subtitleHighlight": "...", "duration": ${targetDurationPerSection} }
+  ]
+}`;
+
+      try {
+        const contResponse = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: continuePrompt },
+            ],
+            temperature: 1.0,
+            max_tokens: 8000,
+            response_format: { type: "json_object" },
+          }),
+        });
+
+        if (contResponse.ok) {
+          const contData = await contResponse.json();
+          const contContent = contData.choices[0].message.content;
+          const contScript = JSON.parse(contContent);
+          if (contScript.sections && contScript.sections.length > 0) {
+            script.sections.push(...contScript.sections);
+            currentSections = script.sections.length;
+            console.log(`[generateScript] 추가 ${contScript.sections.length}개 → 총 ${currentSections}개 섹션`);
+          } else {
+            break;
+          }
+        } else {
+          console.warn(`[generateScript] 추가 섹션 생성 실패:`, await contResponse.text());
+          break;
+        }
+      } catch (e) {
+        console.warn(`[generateScript] 추가 섹션 생성 에러:`, e);
+        break;
+      }
+    }
+  }
+
+  console.log(`[generateScript] 최종 섹션 수: ${script.sections.length}`);
+  return script;
 }
 
 async function generateTTS(
