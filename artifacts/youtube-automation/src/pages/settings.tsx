@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic, Key, Settings2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ELEVENLABS_VOICES = [
@@ -113,18 +114,12 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings"] });
-      toast({ title: "저장 완료", description: "API 키가 저장되었습니다." });
+      toast({ title: "저장 완료", description: "설정이 저장되었습니다." });
     },
     onError: () => {
       toast({ title: "저장 실패", description: "설정을 저장하는 중 오류가 발생했습니다.", variant: "destructive" });
     },
   });
-
-  const maskValue = (val: string) => {
-    if (!val) return "";
-    if (val.length <= 8) return "••••••••";
-    return val.substring(0, 4) + "••••" + val.substring(val.length - 4);
-  };
 
   if (isLoading) {
     return (
@@ -139,112 +134,167 @@ export default function Settings() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">설정</h1>
         <p className="text-muted-foreground mt-1">
-          외부 API 키를 등록하세요. 각 서비스에서 직접 발급받은 키를 입력합니다.
+          API 키, 음성, 채널 브랜딩을 관리하세요.
         </p>
       </div>
 
-      <div className="space-y-4">
-        {API_KEYS.map((config) => {
-          const hasValue = !!values[config.key]?.trim() || savedKeys.has(config.key);
-          const isVisible = showKeys[config.key];
+      <Tabs defaultValue="api-keys" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="api-keys" className="flex items-center gap-1.5">
+            <Key className="w-3.5 h-3.5" />
+            API 키
+          </TabsTrigger>
+          <TabsTrigger value="voice" className="flex items-center gap-1.5">
+            <Mic className="w-3.5 h-3.5" />
+            음성
+          </TabsTrigger>
+          <TabsTrigger value="branding" className="flex items-center gap-1.5">
+            <Settings2 className="w-3.5 h-3.5" />
+            브랜딩
+          </TabsTrigger>
+        </TabsList>
 
-          return (
-            <Card key={config.key}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-base">{config.label}</CardTitle>
-                    {config.required ? (
-                      <Badge variant="secondary" className="text-xs">필수</Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs">선택</Badge>
-                    )}
-                  </div>
-                  {hasValue ? (
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <XCircle className="w-4 h-4 text-muted-foreground" />
-                  )}
-                </div>
-                <CardDescription>{config.description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <Input
-                      type={isVisible ? "text" : "password"}
-                      placeholder={config.placeholder}
-                      value={values[config.key] || ""}
-                      onChange={(e) => setValues((prev) => ({ ...prev, [config.key]: e.target.value }))}
-                    />
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setShowKeys((prev) => ({ ...prev, [config.key]: !prev[config.key] }))}
-                  >
-                    {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </Button>
-                </div>
-                <a
-                  href={config.docsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline mt-2 inline-block"
-                >
-                  API 키 발급받기 →
-                </a>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+        <TabsContent value="api-keys" className="space-y-4 mt-4">
+          <div className="space-y-4">
+            {API_KEYS.map((config) => {
+              const hasValue = !!values[config.key]?.trim() || savedKeys.has(config.key);
+              const isVisible = showKeys[config.key];
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Mic className="w-4 h-4" />
-            <CardTitle className="text-base">나레이션 음성</CardTitle>
-            <Badge variant="outline" className="text-xs">선택</Badge>
+              return (
+                <Card key={config.key}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base">{config.label}</CardTitle>
+                        {config.required ? (
+                          <Badge variant="secondary" className="text-xs">필수</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">선택</Badge>
+                        )}
+                      </div>
+                      {hasValue ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <CardDescription>{config.description}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <Input
+                          type={isVisible ? "text" : "password"}
+                          placeholder={config.placeholder}
+                          value={values[config.key] || ""}
+                          onChange={(e) => setValues((prev) => ({ ...prev, [config.key]: e.target.value }))}
+                        />
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowKeys((prev) => ({ ...prev, [config.key]: !prev[config.key] }))}
+                      >
+                        {isVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                    <a
+                      href={config.docsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline mt-2 inline-block"
+                    >
+                      API 키 발급받기 →
+                    </a>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
-          <CardDescription>ElevenLabs TTS 음성을 선택하세요. 모든 음성은 한국어를 지원합니다.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Select
-            value={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB"}
-            onValueChange={(val) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: val }))}
+
+          <Button
+            className="w-full"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
           >
-            <SelectTrigger>
-              <SelectValue placeholder="음성 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {ELEVENLABS_VOICES.map((voice) => (
-                <SelectItem key={voice.id} value={voice.id}>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{voice.name}</span>
-                    <span className="text-xs text-muted-foreground">{voice.description}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
+            {saveMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            API 키 저장
+          </Button>
+        </TabsContent>
 
-      <Button
-        className="w-full"
-        onClick={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending}
-      >
-        {saveMutation.isPending ? (
-          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        ) : (
-          <Save className="w-4 h-4 mr-2" />
-        )}
-        설정 저장
-      </Button>
+        <TabsContent value="voice" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">나레이션 음성</CardTitle>
+              <CardDescription>ElevenLabs TTS 음성을 선택하세요. 모든 음성은 한국어를 지원합니다.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Select
+                value={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB"}
+                onValueChange={(val) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: val }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="음성 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ELEVENLABS_VOICES.map((voice) => (
+                    <SelectItem key={voice.id} value={voice.id}>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{voice.name}</span>
+                        <span className="text-xs text-muted-foreground">{voice.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
-      <ChannelLogoSection />
+              <div className="rounded-lg border border-border p-4 bg-muted/30">
+                <h4 className="text-sm font-medium mb-2">음성 미리보기</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {ELEVENLABS_VOICES.map((voice) => {
+                    const isSelected = (values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB") === voice.id;
+                    return (
+                      <button
+                        key={voice.id}
+                        onClick={() => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: voice.id }))}
+                        className={`text-left p-3 rounded-lg border transition-colors ${
+                          isSelected
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border hover:border-primary/50 hover:bg-muted/50"
+                        }`}
+                      >
+                        <div className="font-medium text-sm">{voice.name}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{voice.description}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Button
+            className="w-full"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
+            {saveMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4 mr-2" />
+            )}
+            음성 설정 저장
+          </Button>
+        </TabsContent>
+
+        <TabsContent value="branding" className="space-y-4 mt-4">
+          <ChannelLogoSection />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -303,7 +353,7 @@ function ChannelLogoSection() {
           <CardTitle className="text-base">채널 로고</CardTitle>
           <Badge variant="outline" className="text-xs">선택</Badge>
         </div>
-        <CardDescription>썸네일 좌측 상단에 표시될 채널 로고 이미지를 업로드하세요</CardDescription>
+        <CardDescription>썸네일과 영상에 표시될 채널 로고 이미지를 업로드하세요</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex items-center gap-4">
