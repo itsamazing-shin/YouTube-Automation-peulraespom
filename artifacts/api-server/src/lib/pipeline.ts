@@ -603,22 +603,44 @@ async function overlayTextOnImage(
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
-  const lines = splitTextForOverlay(text, isVertical ? 8 : 12);
-  const fontSize = isVertical ? 72 : 80;
-  const lineHeight = fontSize * 1.3;
-  const totalTextHeight = lines.length * lineHeight;
-  const startY = isVertical ? `(h/2 - ${totalTextHeight / 2})` : `(h/2 - ${totalTextHeight / 2})`;
+  const { mainLines, subText } = splitThumbnailText(text);
+  const mainFontSize = isVertical ? 100 : 120;
+  const subFontSize = isVertical ? 40 : 48;
+  const lineHeight = mainFontSize * 1.15;
+  const totalMainHeight = mainLines.length * lineHeight;
+  const bottomMargin = isVertical ? 120 : 80;
+  const mainStartY = `(h - ${totalMainHeight + bottomMargin})`;
 
-  let filterComplex = "";
-  for (let i = 0; i < lines.length; i++) {
-    const safeText = sanitizeForFFmpeg(lines[i]);
-    const yExpr = `${startY} + ${i * lineHeight}`;
-    const prefix = i === 0 ? "" : ",";
+  const colors = ["#FFFF00", "#FFFFFF", "#FF4444", "#FFFF00"];
+
+  let filterComplex = `[0:v]drawbox=y=ih*0.45:width=iw:height=ih*0.55:color=black@0.55:t=fill[bg];[bg]`;
+
+  if (subText) {
+    const safeSubText = sanitizeForFFmpeg(subText);
     filterComplex +=
-      `${prefix}drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=white:borderw=4:bordercolor=black` +
-      `:shadowcolor=black@0.8:shadowx=3:shadowy=3` +
+      `drawtext=text='${safeSubText}':fontfile='${safeFontPath}':fontsize=${subFontSize}` +
+      `:fontcolor=white:borderw=3:bordercolor=black@0.9` +
+      `:shadowcolor=black@0.7:shadowx=2:shadowy=2` +
+      `:x=(w-text_w)/2:y=${mainStartY}-${subFontSize + 20},`;
+  }
+
+  for (let i = 0; i < mainLines.length; i++) {
+    const safeText = sanitizeForFFmpeg(mainLines[i]);
+    const yExpr = `${mainStartY} + ${i * lineHeight}`;
+    const color = colors[i % colors.length];
+    const borderW = 8;
+
+    filterComplex +=
+      `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${mainFontSize}` +
+      `:fontcolor=black:x=(w-text_w)/2+3:y=${yExpr}+3,`;
+
+    filterComplex +=
+      `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${mainFontSize}` +
+      `:fontcolor=${color}:borderw=${borderW}:bordercolor=black` +
+      `:shadowcolor=black@0.9:shadowx=4:shadowy=4` +
       `:x=(w-text_w)/2:y=${yExpr}`;
+
+    if (i < mainLines.length - 1) filterComplex += ",";
   }
 
   await execFileAsync("ffmpeg", [
@@ -629,22 +651,54 @@ async function overlayTextOnImage(
   ], { timeout: 30000 });
 }
 
-function splitTextForOverlay(text: string, maxCharsPerLine: number): string[] {
+function splitThumbnailText(text: string): { mainLines: string[]; subText: string | null } {
+  const parts = text.split(/[—\-|]/);
+  let mainText = text;
+  let subText: string | null = null;
+
+  if (parts.length >= 2) {
+    const first = parts[0].trim();
+    const rest = parts.slice(1).join(" ").trim();
+    if (first.length <= 15 && rest.length > 0) {
+      subText = `"${first}"`;
+      mainText = rest;
+    } else if (rest.length <= 15 && first.length > 0) {
+      subText = `"${rest}"`;
+      mainText = first;
+    }
+  }
+
+  const maxChars = 10;
   const lines: string[] = [];
-  let remaining = text;
+  let remaining = mainText;
+
   while (remaining.length > 0) {
-    if (remaining.length <= maxCharsPerLine) {
+    if (remaining.length <= maxChars) {
       lines.push(remaining);
       break;
     }
-    let splitIdx = maxCharsPerLine;
-    const spaceIdx = remaining.lastIndexOf(" ", maxCharsPerLine);
-    if (spaceIdx > maxCharsPerLine * 0.4) splitIdx = spaceIdx;
+    let splitIdx = maxChars;
+    const spaceIdx = remaining.lastIndexOf(" ", maxChars);
+    if (spaceIdx > maxChars * 0.3) splitIdx = spaceIdx;
     lines.push(remaining.substring(0, splitIdx).trim());
     remaining = remaining.substring(splitIdx).trim();
   }
-  return lines;
+
+  if (lines.length > 3) {
+    const merged: string[] = [];
+    for (let i = 0; i < lines.length; i += 2) {
+      if (i + 1 < lines.length) {
+        merged.push(lines[i] + " " + lines[i + 1]);
+      } else {
+        merged.push(lines[i]);
+      }
+    }
+    return { mainLines: merged.slice(0, 3), subText };
+  }
+
+  return { mainLines: lines.slice(0, 3), subText };
 }
+
 
 async function concatenateVideos(
   videoPaths: string[],
