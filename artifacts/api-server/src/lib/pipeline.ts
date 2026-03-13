@@ -21,10 +21,23 @@ export async function regenerateThumbnail(
   const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
   if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
-  const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
-  await generateImage(customPrompt, thumbPath, openaiKey, false, openaiBaseUrl, "medium");
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  const title = project?.title || "";
 
-  if (fs.existsSync(thumbPath)) {
+  const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
+  const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
+
+  const noTextPrompt = customPrompt + " CRITICAL: Do NOT include any text, letters, or words in the image. Leave space for text overlay.";
+  await generateImage(noTextPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+
+  if (fs.existsSync(thumbRawPath)) {
+    try {
+      await overlayTextOnImage(thumbRawPath, thumbPath, title, false);
+    } catch (e) {
+      console.warn("Text overlay failed, using raw image:", e);
+      fs.copyFileSync(thumbRawPath, thumbPath);
+    }
+
     const relativePath = `/files/project_${projectId}/thumbnail_${projectId}.png`;
     await db.update(projects).set({
       thumbnailUrl: relativePath,
@@ -102,12 +115,12 @@ JSON 형식:
   "sections": [
     {
       "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
-      "imagePrompt": "${visualStyle === "simple-character" ? "Image prompt for this scene. You MAY include short Korean text labels on props or speech bubbles if it helps convey the message (e.g. text on a document, sign, or speech bubble). Keep text minimal (1-3 words max)." : "English-only image prompt for this scene. IMPORTANT: Do NOT include any Korean text, letters, signs, or writing in the image. No text overlay. Visual scene only."} Style: ${styleMap[visualStyle] || styleMap.cinematic}",
+      "imagePrompt": "English-only image prompt for this scene. CRITICAL: Do NOT include ANY text, letters, words, signs, labels, speech bubbles with text, or writing of ANY language in the image. The image must be purely visual with ZERO text elements. Leave empty speech bubbles or blank signs if needed — text will be added separately. Style: ${styleMap[visualStyle] || styleMap.cinematic}",
       "subtitleHighlight": "핵심 자막 (짧은 문구)",
       "duration": ${isShorts ? 15 : 30}
     }
   ],
-  "thumbnailPrompt": "YouTube thumbnail, ultra eye-catching. Requirements: 1) dramatic facial expression or shocking visual related to the topic, 2) bold large Korean title text (max 5 words) with yellow/white outline and drop shadow, 3) high contrast saturated colors with red/yellow accent, 4) clean composition with subject on one side leaving space for text, 5) slight zoom-in effect for urgency. Style: MrBeast/Korean top YouTuber thumbnail quality."
+  "thumbnailPrompt": "YouTube thumbnail, ultra eye-catching. Requirements: 1) dramatic facial expression or shocking visual related to the topic, 2) DO NOT include any text or letters in the image — leave clean space on the left side for text overlay to be added later, 3) high contrast saturated colors with red/yellow accent, 4) clean composition with subject on the right side leaving the left 40% empty for text, 5) slight zoom-in effect for urgency. Style: MrBeast/Korean top YouTuber thumbnail quality. CRITICAL: absolutely NO text, NO letters, NO words in the image."
 }`;
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -491,6 +504,58 @@ async function composeSectionVideo(
   ], { timeout: 120000 });
 }
 
+async function overlayTextOnImage(
+  inputPath: string,
+  outputPath: string,
+  text: string,
+  isVertical: boolean,
+): Promise<void> {
+  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
+  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+
+  const lines = splitTextForOverlay(text, isVertical ? 8 : 12);
+  const fontSize = isVertical ? 72 : 80;
+  const lineHeight = fontSize * 1.3;
+  const totalTextHeight = lines.length * lineHeight;
+  const startY = isVertical ? `(h/2 - ${totalTextHeight / 2})` : `(h/2 - ${totalTextHeight / 2})`;
+
+  let filterComplex = "";
+  for (let i = 0; i < lines.length; i++) {
+    const safeText = sanitizeForFFmpeg(lines[i]);
+    const yExpr = `${startY} + ${i * lineHeight}`;
+    const prefix = i === 0 ? "" : ",";
+    filterComplex +=
+      `${prefix}drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=white:borderw=4:bordercolor=black` +
+      `:shadowcolor=black@0.8:shadowx=3:shadowy=3` +
+      `:x=(w-text_w)/2:y=${yExpr}`;
+  }
+
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-i", inputPath,
+    "-vf", filterComplex || "null",
+    outputPath,
+  ], { timeout: 30000 });
+}
+
+function splitTextForOverlay(text: string, maxCharsPerLine: number): string[] {
+  const lines: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= maxCharsPerLine) {
+      lines.push(remaining);
+      break;
+    }
+    let splitIdx = maxCharsPerLine;
+    const spaceIdx = remaining.lastIndexOf(" ", maxCharsPerLine);
+    if (spaceIdx > maxCharsPerLine * 0.4) splitIdx = spaceIdx;
+    lines.push(remaining.substring(0, splitIdx).trim());
+    remaining = remaining.substring(splitIdx).trim();
+  }
+  return lines;
+}
+
 async function concatenateVideos(
   videoPaths: string[],
   outputPath: string,
@@ -605,7 +670,9 @@ export async function generateVideo(
     await updateProgress(projectId, 95, "썸네일 생성 중...");
     const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
     try {
-      await generateImage(script.thumbnailPrompt, thumbPath, openaiKey, false, openaiBaseUrl, "medium");
+      const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
+      await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+      await overlayTextOnImage(thumbRawPath, thumbPath, script.title, false);
     } catch (e) {
       console.warn("Thumbnail generation failed, skipping:", e);
     }
