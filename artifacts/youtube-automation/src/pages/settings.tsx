@@ -10,18 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic, Key, Settings2, Play, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-const ELEVENLABS_VOICES = [
-  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", description: "남성, 깊고 차분한 목소리" },
-  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", description: "남성, 부드럽고 따뜻한 목소리" },
-  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", description: "남성, 강하고 힘 있는 목소리" },
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", description: "여성, 차분하고 전문적인 목소리" },
-  { id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", description: "여성, 활기차고 밝은 목소리" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", description: "여성, 부드럽고 자연스러운 목소리" },
-  { id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", description: "여성, 젊고 가벼운 목소리" },
-  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", description: "남성, 젊고 에너지 넘치는 목소리" },
-  { id: "yoZ06aMxZJJ28mfd3POQ", name: "Sam", description: "남성, 따뜻하고 친근한 목소리" },
-  { id: "jBpfuIE2acCO8z3wKNLl", name: "Gigi", description: "여성, 밝고 활발한 목소리" },
-];
+interface ElevenLabsVoice {
+  id: string;
+  name: string;
+  gender: string;
+  accent: string;
+  description: string;
+  useCase: string;
+  previewUrl: string | null;
+  category: string;
+}
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, '/');
 
@@ -258,8 +256,18 @@ export default function Settings() {
 function VoiceSelector({ selectedVoiceId, onSelect, hasApiKey }: { selectedVoiceId: string; onSelect: (id: string) => void; hasApiKey: boolean }) {
   const { toast } = useToast();
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-  const [loadingVoiceId, setLoadingVoiceId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const { data: voices = [], isLoading: voicesLoading } = useQuery<ElevenLabsVoice[]>({
+    queryKey: ["elevenlabs-voices"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/voices`);
+      if (!res.ok) throw new Error("Failed to fetch voices");
+      return res.json();
+    },
+    enabled: hasApiKey,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const stopAudio = () => {
     if (audioRef.current) {
@@ -269,24 +277,34 @@ function VoiceSelector({ selectedVoiceId, onSelect, hasApiKey }: { selectedVoice
     setPlayingVoiceId(null);
   };
 
-  const playPreview = async (voiceId: string) => {
-    if (playingVoiceId === voiceId) {
+  const [loadingVoiceId, setLoadingVoiceId] = useState<string | null>(null);
+
+  const playPreview = async (voice: ElevenLabsVoice) => {
+    if (playingVoiceId === voice.id) {
       stopAudio();
       return;
     }
     stopAudio();
 
-    if (!hasApiKey) {
-      toast({ title: "API 키 필요", description: "ElevenLabs API 키를 먼저 등록해주세요.", variant: "destructive" });
+    if (voice.previewUrl) {
+      const audio = new Audio(voice.previewUrl);
+      audioRef.current = audio;
+      audio.onended = () => setPlayingVoiceId(null);
+      audio.onerror = () => {
+        setPlayingVoiceId(null);
+        toast({ title: "미리듣기 실패", description: "음성 재생에 실패했습니다.", variant: "destructive" });
+      };
+      audio.play();
+      setPlayingVoiceId(voice.id);
       return;
     }
 
-    setLoadingVoiceId(voiceId);
+    setLoadingVoiceId(voice.id);
     try {
       const res = await fetch(`${API_BASE}/voice-preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ voiceId }),
+        body: JSON.stringify({ voiceId: voice.id }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "미리듣기 실패" }));
@@ -301,7 +319,7 @@ function VoiceSelector({ selectedVoiceId, onSelect, hasApiKey }: { selectedVoice
         URL.revokeObjectURL(url);
       };
       audio.play();
-      setPlayingVoiceId(voiceId);
+      setPlayingVoiceId(voice.id);
     } catch (err: any) {
       toast({ title: "미리듣기 실패", description: err.message, variant: "destructive" });
     } finally {
@@ -309,56 +327,74 @@ function VoiceSelector({ selectedVoiceId, onSelect, hasApiKey }: { selectedVoice
     }
   };
 
+  const formatGender = (g: string) => {
+    if (g === "male") return "남성";
+    if (g === "female") return "여성";
+    return g;
+  };
+
   return (
     <Card>
       <CardHeader className="pb-3">
         <CardTitle className="text-base">나레이션 음성</CardTitle>
-        <CardDescription>음성을 선택하고 미리 들어보세요. 모든 음성은 한국어를 지원합니다.</CardDescription>
+        <CardDescription>음성을 선택하고 미리 들어보세요. ElevenLabs 계정의 모든 음성이 표시됩니다.</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {ELEVENLABS_VOICES.map((voice) => {
-            const isSelected = selectedVoiceId === voice.id;
-            const isPlaying = playingVoiceId === voice.id;
-            const isLoading = loadingVoiceId === voice.id;
-            return (
-              <div
-                key={voice.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
-                  isSelected
-                    ? "border-primary bg-primary/10"
-                    : "border-border hover:border-primary/50 hover:bg-muted/50"
-                }`}
-                onClick={() => onSelect(voice.id)}
-              >
-                <button
-                  onClick={(e) => { e.stopPropagation(); playPreview(voice.id); }}
-                  disabled={isLoading}
-                  className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
-                    isPlaying
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted hover:bg-primary/20"
+        {!hasApiKey ? (
+          <p className="text-sm text-muted-foreground">ElevenLabs API 키를 먼저 등록해주세요.</p>
+        ) : voicesLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            음성 목록을 불러오는 중...
+          </div>
+        ) : voices.length === 0 ? (
+          <p className="text-sm text-muted-foreground">사용 가능한 음성이 없습니다.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
+            {voices.map((voice) => {
+              const isSelected = selectedVoiceId === voice.id;
+              const isPlaying = playingVoiceId === voice.id;
+              return (
+                <div
+                  key={voice.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                    isSelected
+                      ? "border-primary bg-primary/10"
+                      : "border-border hover:border-primary/50 hover:bg-muted/50"
                   }`}
+                  onClick={() => onSelect(voice.id)}
                 >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : isPlaying ? (
-                    <Square className="w-3.5 h-3.5" />
-                  ) : (
-                    <Play className="w-4 h-4 ml-0.5" />
+                  <button
+                    onClick={(e) => { e.stopPropagation(); playPreview(voice); }}
+                    disabled={loadingVoiceId === voice.id}
+                    className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                      isPlaying
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted hover:bg-primary/20"
+                    }`}
+                  >
+                    {loadingVoiceId === voice.id ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : isPlaying ? (
+                      <Square className="w-3.5 h-3.5" />
+                    ) : (
+                      <Play className="w-4 h-4 ml-0.5" />
+                    )}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{voice.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {[formatGender(voice.gender), voice.accent, voice.description].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  {isSelected && (
+                    <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
                   )}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{voice.name}</div>
-                  <div className="text-xs text-muted-foreground">{voice.description}</div>
                 </div>
-                {isSelected && (
-                  <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
