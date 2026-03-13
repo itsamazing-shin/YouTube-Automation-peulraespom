@@ -8,25 +8,44 @@ import { spawn } from "child_process";
 
 function runFFmpeg(args: string[], timeout: number = 300000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
+    console.log(`[FFmpeg] 시작: ffmpeg ${args.slice(0, 6).join(" ")} ... (총 ${args.length}개 인수, timeout=${timeout}ms)`);
+    const startTime = Date.now();
     const proc = spawn("ffmpeg", args, { stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderrTail = "";
+    let frameCount = 0;
     proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
     proc.stderr.on("data", (d: Buffer) => {
       const s = d.toString();
       stderrTail = (stderrTail + s).slice(-2000);
+      const frameMatch = s.match(/frame=\s*(\d+)/);
+      if (frameMatch) {
+        const f = parseInt(frameMatch[1]);
+        if (f > frameCount + 100) {
+          frameCount = f;
+          console.log(`[FFmpeg] 진행: frame=${f}, 경과=${Math.round((Date.now() - startTime) / 1000)}초`);
+        }
+      }
     });
     const timer = setTimeout(() => {
+      console.error(`[FFmpeg] 타임아웃! ${timeout}ms 경과, frame=${frameCount}`);
       proc.kill("SIGKILL");
-      reject(new Error(`FFmpeg timeout after ${timeout}ms. stderr: ${stderrTail}`));
+      reject(new Error(`FFmpeg timeout after ${timeout}ms, frame=${frameCount}. stderr: ${stderrTail}`));
     }, timeout);
     proc.on("close", (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve({ stdout, stderr: stderrTail });
-      else reject(new Error(`FFmpeg exited with code ${code}. stderr: ${stderrTail}`));
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      if (code === 0) {
+        console.log(`[FFmpeg] 완료: ${elapsed}초, frame=${frameCount}`);
+        resolve({ stdout, stderr: stderrTail });
+      } else {
+        console.error(`[FFmpeg] 실패: code=${code}, ${elapsed}초. stderr: ${stderrTail.slice(-500)}`);
+        reject(new Error(`FFmpeg exited with code ${code}. stderr: ${stderrTail}`));
+      }
     });
     proc.on("error", (err) => {
       clearTimeout(timer);
+      console.error(`[FFmpeg] 프로세스 에러:`, err.message);
       reject(err);
     });
     proc.stdin.end();
@@ -783,6 +802,8 @@ async function composeMultiImageSectionVideo(
   const imgCount = imagePaths.length;
   const clipDur = totalDur / imgCount;
 
+  console.log(`[composeMultiImage] ${imgCount}장, dur=${audioDuration}s, clipDur=${clipDur.toFixed(1)}s`);
+
   const subtitles = whisperSegments && whisperSegments.length > 0
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
     : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
@@ -790,55 +811,59 @@ async function composeMultiImageSectionVideo(
   const srtPath = outputPath.replace(".mp4", ".srt");
   fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
 
-  const hasLogo = logoPath && fs.existsSync(logoPath);
-  const logoSize = isVertical ? 160 : 200;
-
-  const inputs: string[] = ["-y"];
-  for (const img of imagePaths) {
-    inputs.push("-loop", "1", "-t", clipDur.toFixed(3), "-i", img);
-  }
-  inputs.push("-i", audioPath);
-  if (hasLogo) inputs.push("-i", logoPath!);
-
-  const audioIdx = imgCount;
-  const logoIdx = hasLogo ? imgCount + 1 : -1;
-
-  let filterParts: string[] = [];
+  const clipPaths: string[] = [];
   for (let i = 0; i < imgCount; i++) {
-    filterParts.push(
-      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-      `setsar=1,format=yuv420p,fps=24[clip${i}]`
-    );
+    const scaledPath = outputPath.replace(".mp4", `_img${i}_scaled.png`);
+    await runFFmpeg([
+      "-y", "-i", imagePaths[i],
+      "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+      "-frames:v", "1",
+      scaledPath,
+    ], 30000);
+
+    const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
+    await runFFmpeg([
+      "-y",
+      "-loop", "1", "-framerate", "1", "-i", scaledPath,
+      "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo`,
+      "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+      "-crf", "30", "-r", "15", "-g", "150",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac",
+      "-t", clipDur.toFixed(3),
+      "-shortest",
+      clipPath,
+    ], 120000);
+
+    clipPaths.push(clipPath);
+    try { fs.unlinkSync(scaledPath); } catch {}
   }
 
-  const concatInputs = imagePaths.map((_, i) => `[clip${i}]`).join("");
-  filterParts.push(`${concatInputs}concat=n=${imgCount}:v=1:a=0[merged]`);
+  const listPath = outputPath.replace(".mp4", "_cliplist.txt");
+  fs.writeFileSync(listPath, clipPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"));
 
-  let lastLabel = "merged";
-  if (hasLogo) {
-    filterParts.push(`[${logoIdx}:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo]`);
-    filterParts.push(`[${lastLabel}][logo]overlay=15:15[withlogo]`);
-    lastLabel = "withlogo";
-  }
-
-  filterParts.push(`[${lastLabel}]copy[vout]`);
-
-  const filterComplex = filterParts.join(";");
+  const mergedNoAudioPath = outputPath.replace(".mp4", "_merged.mp4");
+  await runFFmpeg([
+    "-y", "-f", "concat", "-safe", "0",
+    "-i", listPath,
+    "-c", "copy",
+    mergedNoAudioPath,
+  ], 60000);
 
   await runFFmpeg([
-    ...inputs,
-    "-filter_complex", filterComplex,
-    "-map", "[vout]", "-map", `${audioIdx}:a`,
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-    "-r", "24",
+    "-y",
+    "-i", mergedNoAudioPath,
+    "-i", audioPath,
+    "-c:v", "copy",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
-    "-threads", "2",
     outputPath,
-  ], 300000);
+  ], 120000);
 
+  for (const cp of clipPaths) { try { fs.unlinkSync(cp); } catch {} }
+  try { fs.unlinkSync(listPath); } catch {}
+  try { fs.unlinkSync(mergedNoAudioPath); } catch {}
   try { fs.unlinkSync(srtPath); } catch {}
 }
 
@@ -961,6 +986,10 @@ async function composeSectionVideo(
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
 
+  const imgStat = fs.statSync(imagePath);
+  const audioStat = fs.statSync(audioPath);
+  console.log(`[composeSectionVideo] image=${imagePath} (${Math.round(imgStat.size/1024)}KB), audio=${audioPath} (${Math.round(audioStat.size/1024)}KB), dur=${audioDuration}s, ${width}x${height}`);
+
   const subtitles = whisperSegments && whisperSegments.length > 0
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
     : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
@@ -968,46 +997,30 @@ async function composeSectionVideo(
   const srtPath = outputPath.replace(".mp4", ".srt");
   fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
 
-  const hasLogo = logoPath && fs.existsSync(logoPath);
-  const logoSize = isVertical ? 160 : 200;
+  const scaledImgPath = outputPath.replace(".mp4", "_scaled.png");
+  await runFFmpeg([
+    "-y", "-i", imagePath,
+    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    "-frames:v", "1",
+    scaledImgPath,
+  ], 30000);
 
-  const inputs = [
-    "-y",
-    "-loop", "1", "-framerate", "24", "-i", imagePath,
-    "-i", audioPath,
-  ];
-  if (hasLogo) {
-    inputs.push("-i", logoPath!);
-  }
-
-  let filterComplex: string;
-  if (hasLogo) {
-    filterComplex =
-      `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-      `setsar=1,format=yuv420p[scene];` +
-      `[2:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo];` +
-      `[scene][logo]overlay=15:15[vout]`;
-  } else {
-    filterComplex =
-      `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-      `setsar=1,format=yuv420p[vout]`;
-  }
+  console.log(`[composeSectionVideo] 스케일 완료, 인코딩 시작`);
 
   await runFFmpeg([
-    ...inputs,
-    "-filter_complex", filterComplex,
-    "-map", "[vout]", "-map", "1:a",
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-    "-r", "24",
+    "-y",
+    "-loop", "1", "-framerate", "1", "-i", scaledImgPath,
+    "-i", audioPath,
+    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+    "-crf", "30", "-r", "15", "-g", "150",
+    "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
-    "-threads", "2",
     outputPath,
   ], 300000);
 
+  try { fs.unlinkSync(scaledImgPath); } catch {}
   try { fs.unlinkSync(srtPath); } catch {}
 }
 
