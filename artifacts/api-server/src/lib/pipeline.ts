@@ -824,16 +824,16 @@ async function composeMultiImageSectionVideo(
     const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
     await runFFmpeg([
       "-y",
-      "-loop", "1", "-framerate", "1", "-i", scaledPath,
+      "-loop", "1", "-framerate", "5", "-i", scaledPath,
       "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo`,
       "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-      "-crf", "30", "-r", "15", "-g", "150",
+      "-crf", "30", "-r", "5", "-g", "50",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac",
       "-t", clipDur.toFixed(3),
       "-shortest",
       clipPath,
-    ], 120000);
+    ], 300000);
 
     clipPaths.push(clipPath);
     try { fs.unlinkSync(scaledPath); } catch {}
@@ -1009,16 +1009,16 @@ async function composeSectionVideo(
 
   await runFFmpeg([
     "-y",
-    "-loop", "1", "-framerate", "1", "-i", scaledImgPath,
+    "-loop", "1", "-framerate", "5", "-i", scaledImgPath,
     "-i", audioPath,
     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-    "-crf", "30", "-r", "15", "-g", "150",
+    "-crf", "30", "-r", "5", "-g", "50",
     "-pix_fmt", "yuv420p",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
     outputPath,
-  ], 300000);
+  ], 600000);
 
   try { fs.unlinkSync(scaledImgPath); } catch {}
   try { fs.unlinkSync(srtPath); } catch {}
