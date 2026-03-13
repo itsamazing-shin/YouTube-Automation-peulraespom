@@ -236,13 +236,12 @@ ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시
 
 🔥 제목 & 썸네일 텍스트 작성 핵심 규칙:
 - title: 유튜브 검색/추천에 노출될 전체 제목 (20~40자). 큰따옴표로 핵심 문구를 감싸서 강조. 예: "중국 경제 완전 붕괴" 14억 대륙의 충격적 최후
-- thumbnailText: 썸네일 이미지 위에 표시될 짧고 강렬한 후킹 문구 (최대 15~20자). 클릭을 유도하는 충격적이고 자극적인 짧은 문구. 예시:
-  * "중국 경제 폭락"
-  * "일본 국채 위기"  
-  * "천궁-II 96% 요격"
-  * "그들의 시대는 끝났다"
-  * "14억 대륙 파멸의 최후"
-  * "트럼프의 소름 돋는 실체"
+- thumbnailText: 썸네일 이미지 위에 표시될 2줄 후킹 문구. 반드시 \\n으로 줄바꿈하여 2줄로 작성. 각 줄 8~12자. 윗줄=노란색, 아랫줄=흰색. 예시:
+  * "중국 경제\n완전 붕괴"
+  * "일본 국채 위기\n충격적 최후"
+  * "천궁-II 96%\n요격 성공"
+  * "14억 대륙\n파멸의 최후"
+  * "트럼프의 소름\n돋는 실체"
 - 핵심: 위기감, 충격, 긴박감, 궁금증을 자극하는 단어 사용. "폭락", "붕괴", "충격", "미친", "실체", "최후", "끝났다" 등
 
 매번 완전히 새로운 시각과 독창적인 구성으로 대본을 작성하세요. 같은 주제라도 이전과 다른 앵글, 다른 예시, 다른 스토리라인으로 접근하세요. 뻔한 서론 대신 의외의 사실이나 충격적인 통계로 시작하세요.
@@ -267,7 +266,7 @@ ${referenceStyleDesc ? `\n🎨 참조 이미지 스타일 (최우선 적용 — 
 JSON 형식:
 {
   "title": "유튜브 검색/추천용 전체 제목 (20~40자, 큰따옴표로 핵심 강조)",
-  "thumbnailText": "썸네일 후킹 문구 (15~20자 이내, 극도로 짧고 강렬하게. 예: 중국 경제 완전 붕괴, 일본의 충격적 최후)",
+  "thumbnailText": "썸네일 후킹 문구를 반드시 2줄로 작성. 줄바꿈은 \\n으로 구분. 각 줄 8~12자. 예: '중국 경제\\n완전 붕괴', '14억 대륙\\n파멸의 최후', '트럼프의 소름\\n돋는 실체'. 윗줄은 노란색, 아랫줄은 흰색으로 표시됨",
   "sections": [
     {
       "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
@@ -665,178 +664,141 @@ async function overlayTextOnImage(
   outputPath: string,
   text: string,
   isVertical: boolean,
+  logoPath?: string,
 ): Promise<void> {
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
-  const imgW = isVertical ? 1080 : 1024;
-  const imgH = isVertical ? 1920 : 1024;
+  const { line1, line2 } = splitThumbnailTwoLines(text);
+  const fontSize = isVertical ? 80 : 90;
+  const borderW = Math.max(6, Math.round(fontSize * 0.09));
+  const lineHeight = Math.round(fontSize * 1.2);
+  const bottomMargin = isVertical ? 120 : 80;
+  const line2Y = `h-${bottomMargin}`;
+  const line1Y = `h-${bottomMargin + lineHeight}`;
+  const gradientH = bottomMargin + lineHeight * 2 + 60;
 
-  const { mainLines, subText } = splitThumbnailText(text);
+  const safeLine1 = sanitizeForFFmpeg(line1);
+  const safeLine2 = sanitizeForFFmpeg(line2);
 
-  const maxTextHeight = imgH * 0.45;
-  const lineSpacing = 1.15;
-  let mainFontSize = isVertical ? 90 : 80;
-  let totalNeeded = mainLines.length * mainFontSize * lineSpacing;
-  while (totalNeeded > maxTextHeight && mainFontSize > 40) {
-    mainFontSize -= 4;
-    totalNeeded = mainLines.length * mainFontSize * lineSpacing;
-  }
+  let inputs = ["-y", "-i", inputPath];
+  let filterParts: string[] = [];
 
-  const longestLine = Math.max(...mainLines.map(l => l.length));
-  const maxFontForWidth = Math.floor((imgW * 0.9) / (longestLine * 0.6));
-  mainFontSize = Math.min(mainFontSize, maxFontForWidth);
-
-  const subFontSize = Math.round(mainFontSize * 0.4);
-  const lineHeight = Math.round(mainFontSize * lineSpacing);
-  const totalMainHeight = mainLines.length * lineHeight;
-  const bottomMargin = Math.round(imgH * 0.05);
-  const mainStartY = imgH - totalMainHeight - bottomMargin;
-
-  const gradientStart = Math.max(0, mainStartY - (subText ? subFontSize + 30 : 20));
-  const gradientRatio = (gradientStart / imgH).toFixed(2);
-
-  const colors = ["#FFFF00", "#FFFFFF", "#FF4444", "#FFFF00"];
-  const borderW = Math.max(4, Math.round(mainFontSize * 0.07));
-
-  let filterComplex = `[0:v]drawbox=y=ih*${gradientRatio}:width=iw:height=ih*(1-${gradientRatio}):color=black@0.5:t=fill[bg];[bg]`;
-
-  if (subText) {
-    const safeSubText = sanitizeForFFmpeg(subText);
-    const subY = mainStartY - subFontSize - 15;
-    filterComplex +=
-      `drawtext=text='${safeSubText}':fontfile='${safeFontPath}':fontsize=${subFontSize}` +
-      `:fontcolor=white:borderw=2:bordercolor=black@0.9` +
-      `:shadowcolor=black@0.7:shadowx=2:shadowy=2` +
-      `:x=(w-text_w)/2:y=${Math.max(10, subY)},`;
-  }
-
-  for (let i = 0; i < mainLines.length; i++) {
-    const safeText = sanitizeForFFmpeg(mainLines[i]);
-    const yPos = mainStartY + (i * lineHeight);
-    const color = colors[i % colors.length];
-
-    filterComplex +=
-      `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${mainFontSize}` +
-      `:fontcolor=black:x=(w-text_w)/2+2:y=${yPos}+2,`;
-
-    filterComplex +=
-      `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${mainFontSize}` +
-      `:fontcolor=${color}:borderw=${borderW}:bordercolor=black` +
+  if (logoPath && fs.existsSync(logoPath)) {
+    inputs.push("-i", logoPath);
+    filterParts.push(
+      `[0:v]drawbox=y=ih-${gradientH}:width=iw:height=${gradientH}:color=black@0.55:t=fill[bg]`,
+      `[bg][1:v]overlay=20:20:format=auto[withlogo]`,
+    );
+    let lastLabel = "[withlogo]";
+    filterParts.push(
+      `${lastLabel}drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=black:x=(w-text_w)/2+3:y=${line1Y}+3,` +
+      `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=#FFFF00:borderw=${borderW}:bordercolor=black` +
       `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
-      `:x=(w-text_w)/2:y=${yPos}`;
-
-    if (i < mainLines.length - 1) filterComplex += ",";
+      `:x=(w-text_w)/2:y=${line1Y},` +
+      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=black:x=(w-text_w)/2+3:y=${line2Y}+3,` +
+      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=#FFFFFF:borderw=${borderW}:bordercolor=black` +
+      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
+      `:x=(w-text_w)/2:y=${line2Y}`
+    );
+  } else {
+    let filter =
+      `[0:v]drawbox=y=ih-${gradientH}:width=iw:height=${gradientH}:color=black@0.55:t=fill,` +
+      `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=black:x=(w-text_w)/2+3:y=${line1Y}+3,` +
+      `drawtext=text='${safeLine1}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=#FFFF00:borderw=${borderW}:bordercolor=black` +
+      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
+      `:x=(w-text_w)/2:y=${line1Y},` +
+      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=black:x=(w-text_w)/2+3:y=${line2Y}+3,` +
+      `drawtext=text='${safeLine2}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=#FFFFFF:borderw=${borderW}:bordercolor=black` +
+      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
+      `:x=(w-text_w)/2:y=${line2Y}`;
+    filterParts.push(filter);
   }
+
+  const filterComplex = filterParts.join(";");
 
   await execFileAsync("ffmpeg", [
-    "-y",
-    "-i", inputPath,
-    "-vf", filterComplex || "null",
+    ...inputs,
+    "-vf", filterComplex,
     outputPath,
   ], { timeout: 30000 });
 }
 
-function splitThumbnailText(text: string): { mainLines: string[]; subText: string | null } {
-  const parts = text.split(/[—\-|]/);
-  let mainText = text;
-  let subText: string | null = null;
+function splitThumbnailTwoLines(text: string): { line1: string; line2: string } {
+  const cleaned = text.replace(/"/g, "").trim();
 
-  if (parts.length >= 2) {
-    const first = parts[0].trim();
-    const rest = parts.slice(1).join(" ").trim();
-    if (first.length <= 15 && rest.length > 0) {
-      subText = `"${first}"`;
-      mainText = rest;
-    } else if (rest.length <= 15 && first.length > 0) {
-      subText = `"${rest}"`;
-      mainText = first;
-    }
+  const nlIdx = cleaned.indexOf("\n");
+  if (nlIdx > 0) {
+    return {
+      line1: cleaned.substring(0, nlIdx).trim(),
+      line2: cleaned.substring(nlIdx + 1).trim(),
+    };
   }
 
-  const maxChars = 12;
-  const lines: string[] = [];
-  let remaining = mainText;
-
-  while (remaining.length > 0) {
-    if (remaining.length <= maxChars) {
-      lines.push(remaining);
-      break;
-    }
-    let splitIdx = maxChars;
-    const spaceIdx = remaining.lastIndexOf(" ", maxChars);
-    if (spaceIdx > maxChars * 0.3) splitIdx = spaceIdx;
-    lines.push(remaining.substring(0, splitIdx).trim());
-    remaining = remaining.substring(splitIdx).trim();
+  if (cleaned.length <= 10) {
+    return { line1: cleaned, line2: "" };
   }
 
-  if (lines.length > 3) {
-    const merged: string[] = [];
-    for (let i = 0; i < lines.length; i += 2) {
-      if (i + 1 < lines.length) {
-        merged.push(lines[i] + " " + lines[i + 1]);
-      } else {
-        merged.push(lines[i]);
-      }
-    }
-    return { mainLines: merged.slice(0, 3), subText };
+  const mid = Math.ceil(cleaned.length / 2);
+  let splitAt = mid;
+  const spaceLeft = cleaned.lastIndexOf(" ", mid);
+  const spaceRight = cleaned.indexOf(" ", mid);
+  if (spaceLeft > cleaned.length * 0.25) {
+    splitAt = spaceLeft;
+  } else if (spaceRight > 0 && spaceRight < cleaned.length * 0.75) {
+    splitAt = spaceRight;
   }
 
-  return { mainLines: lines.slice(0, 3), subText };
+  return {
+    line1: cleaned.substring(0, splitAt).trim(),
+    line2: cleaned.substring(splitAt).trim(),
+  };
 }
 
 
 async function createSubscribeImage(
   outputPath: string,
   isVertical: boolean,
+  openaiKey: string,
+  openaiBaseUrl: string = "https://api.openai.com/v1",
 ): Promise<void> {
-  const w = isVertical ? 1080 : 1920;
-  const h = isVertical ? 1920 : 1080;
-  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
-  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+  const prompt = isVertical
+    ? "A vibrant, eye-catching YouTube subscribe and notification bell graphic. Dark gradient background. Center: a large glowing golden bell icon with sparkle effects. Below: a big red YouTube subscribe button with white play icon, and a bell icon with 'ON' indicator. Modern neon glow style, professional YouTube channel art. Energetic and exciting mood with particle effects. Vertical 9:16 format. NO text, NO letters, NO words anywhere in the image."
+    : "A vibrant, eye-catching YouTube subscribe and notification bell graphic. Dark gradient background (dark blue to black). Center composition: a large glowing golden notification bell with sparkle/particle effects on the left, and a big red YouTube subscribe button with white play triangle icon on the right. Modern neon glow style, professional YouTube channel art quality. Energetic and exciting mood with light rays and bokeh effects. Horizontal 16:9 format. NO text, NO letters, NO words anywhere in the image.";
 
-  const bellSize = isVertical ? 120 : 160;
-  const bellY = isVertical ? Math.round(h * 0.22) : Math.round(h * 0.12);
-  const titleFontSize = isVertical ? 60 : 80;
-  const subFontSize = isVertical ? 36 : 48;
-  const titleY = bellY + bellSize + 30;
-  const subY = titleY + titleFontSize + 20;
-  const btnW = isVertical ? 500 : 600;
-  const btnH = isVertical ? 80 : 90;
-  const btnY = subY + subFontSize + 50;
-  const btnX = Math.round((w - btnW) / 2);
-  const btnFontSize = isVertical ? 40 : 50;
-  const bellBtnW = isVertical ? 420 : 500;
-  const bellBtnH = isVertical ? 70 : 80;
-  const bellBtnY = btnY + btnH + 25;
-  const bellBtnX = Math.round((w - bellBtnW) / 2);
-  const bellBtnFontSize = isVertical ? 34 : 44;
-
-  let filterComplex =
-    `color=c=#1a1a2e:s=${w}x${h}:d=1[bg];` +
-    `[bg]drawbox=x=${Math.round(w/2 - bellSize/2)}:y=${bellY}:w=${bellSize}:h=${bellSize}:color=#FFD700:t=fill,` +
-    `drawtext=text='\\🔔':fontsize=${bellSize - 20}:fontcolor=#1a1a2e:x=(w-text_w)/2:y=${bellY + 10},` +
-    `drawtext=text='구독과 알림 설정':fontfile='${safeFontPath}':fontsize=${titleFontSize}:fontcolor=#FFFFFF:borderw=3:bordercolor=black:x=(w-text_w)/2:y=${titleY},` +
-    `drawtext=text='잊지 마세요!':fontfile='${safeFontPath}':fontsize=${subFontSize}:fontcolor=#AAAAAA:x=(w-text_w)/2:y=${subY},` +
-    `drawbox=x=${btnX}:y=${btnY}:w=${btnW}:h=${btnH}:color=#FF0000:t=fill,` +
-    `drawtext=text='♥ 구독':fontfile='${safeFontPath}':fontsize=${btnFontSize}:fontcolor=white:borderw=2:bordercolor=#CC0000:x=(w-text_w)/2:y=${btnY + Math.round((btnH - btnFontSize) / 2)},` +
-    `drawbox=x=${bellBtnX}:y=${bellBtnY}:w=${bellBtnW}:h=${bellBtnH}:color=#333333:t=fill,` +
-    `drawtext=text='🔔 알림 설정':fontfile='${safeFontPath}':fontsize=${bellBtnFontSize}:fontcolor=#FFD700:borderw=2:bordercolor=black:x=(w-text_w)/2:y=${bellBtnY + Math.round((bellBtnH - bellBtnFontSize) / 2)}`;
-
-  await execFileAsync("ffmpeg", [
-    "-y",
-    "-f", "lavfi", "-i", `color=c=#1a1a2e:s=${w}x${h}:d=1`,
-    "-vf",
-    `drawbox=x=${Math.round(w/2 - bellSize/2)}:y=${bellY}:w=${bellSize}:h=${bellSize}:color=#FFD700:t=fill,` +
-    `drawtext=text='구독과 알림 설정':fontfile='${safeFontPath}':fontsize=${titleFontSize}:fontcolor=#FFFFFF:borderw=3:bordercolor=black:x=(w-text_w)/2:y=${titleY},` +
-    `drawtext=text='잊지 마세요!':fontfile='${safeFontPath}':fontsize=${subFontSize}:fontcolor=#AAAAAA:x=(w-text_w)/2:y=${subY},` +
-    `drawbox=x=${btnX}:y=${btnY}:w=${btnW}:h=${btnH}:color=#FF0000:t=fill,` +
-    `drawtext=text='구독':fontfile='${safeFontPath}':fontsize=${btnFontSize}:fontcolor=white:borderw=2:bordercolor=#CC0000:x=(w-text_w)/2:y=${btnY + Math.round((btnH - btnFontSize) / 2)},` +
-    `drawbox=x=${bellBtnX}:y=${bellBtnY}:w=${bellBtnW}:h=${bellBtnH}:color=#333333:t=fill,` +
-    `drawtext=text='알림 설정':fontfile='${safeFontPath}':fontsize=${bellBtnFontSize}:fontcolor=#FFD700:borderw=2:bordercolor=black:x=(w-text_w)/2:y=${bellBtnY + Math.round((bellBtnH - bellBtnFontSize) / 2)}`,
-    "-frames:v", "1",
-    outputPath,
-  ], { timeout: 30000 });
+  try {
+    await generateImageOpenAI(prompt, outputPath, openaiKey, isVertical, openaiBaseUrl, "low");
+  } catch (e) {
+    console.warn("AI subscribe image failed, using fallback:", e);
+    const w = isVertical ? 1080 : 1920;
+    const h = isVertical ? 1920 : 1080;
+    const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
+    if (createCanvas) {
+      const cvs = createCanvas(w, h);
+      const ctx = cvs.getContext("2d");
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, "#0a0a2e");
+      grad.addColorStop(1, "#1a0a3e");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = "#FF0000";
+      const btnW = 300, btnH = 80;
+      ctx.fillRect(w / 2 - btnW / 2, h / 2 - btnH / 2, btnW, btnH);
+      ctx.fillStyle = "#FFD700";
+      ctx.font = "bold 120px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("\u{1F514}", w / 2, h / 2 - 100);
+      fs.writeFileSync(outputPath, cvs.toBuffer("image/png"));
+    }
+  }
 }
 
 const SUBSCRIBE_NARRATION = "이 영상을 보면서 로또에 당첨되고 싶다면, 지금 바로 구독과 알림 설정 누르세요! 당첨 확률이 올라간다는 소문이 있습니다.";
@@ -845,12 +807,14 @@ async function createSubscribeSectionVideo(
   projectDir: string,
   isVertical: boolean,
   elevenlabsKey: string,
+  openaiKey: string,
+  openaiBaseUrl: string = "https://api.openai.com/v1",
 ): Promise<string> {
   const subscribeImgPath = path.join(projectDir, "subscribe_img.png");
   const subscribeAudioPath = path.join(projectDir, "subscribe_audio.mp3");
   const subscribeVideoPath = path.join(projectDir, "subscribe_section.mp4");
 
-  await createSubscribeImage(subscribeImgPath, isVertical);
+  await createSubscribeImage(subscribeImgPath, isVertical, openaiKey, openaiBaseUrl);
   await generateTTS(SUBSCRIBE_NARRATION, subscribeAudioPath, elevenlabsKey);
 
   const audioDuration = await getAudioDuration(subscribeAudioPath);
@@ -1008,7 +972,7 @@ export async function generateVideo(
       if (i === insertSubscribeAfter) {
         await updateProgress(projectId, Math.round(pctBase + 25), "구독 유도 섹션 생성 중...");
         try {
-          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey);
+          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl);
           sectionVideos.push(subscribeVideoPath);
           console.log("구독 유도 섹션 삽입 완료");
         } catch (subErr: any) {
