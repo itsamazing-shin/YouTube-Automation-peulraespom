@@ -531,6 +531,176 @@ async function getAudioDuration(filePath: string): Promise<number> {
   }
 }
 
+async function fetchPexelsImages(
+  query: string,
+  count: number,
+  outputDir: string,
+  prefix: string,
+  pexelsApiKey: string,
+  isVertical: boolean = false,
+): Promise<string[]> {
+  if (!pexelsApiKey) return [];
+  const orientation = isVertical ? "portrait" : "landscape";
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count * 2}&orientation=${orientation}`;
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: pexelsApiKey },
+    });
+    if (!res.ok) {
+      console.warn(`Pexels API error: ${res.status}`);
+      return [];
+    }
+    const data: any = await res.json();
+    const photos = data.photos || [];
+    const downloaded: string[] = [];
+
+    for (let i = 0; i < Math.min(count, photos.length); i++) {
+      const photo = photos[i];
+      const imgUrl = isVertical ? (photo.src.portrait || photo.src.large) : (photo.src.landscape || photo.src.large);
+      try {
+        const imgRes = await fetch(imgUrl);
+        if (imgRes.ok) {
+          const buf = Buffer.from(await imgRes.arrayBuffer());
+          const outPath = path.join(outputDir, `${prefix}_pexels_${i}.jpg`);
+          fs.writeFileSync(outPath, buf);
+          downloaded.push(outPath);
+        }
+      } catch (e) {
+        console.warn(`Pexels image download failed:`, e);
+      }
+    }
+    return downloaded;
+  } catch (e) {
+    console.warn("Pexels fetch failed:", e);
+    return [];
+  }
+}
+
+async function extractPexelsKeyword(
+  narration: string,
+  apiKey: string,
+  baseUrl: string = "https://api.openai.com/v1",
+): Promise<string> {
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "주어진 한국어 나레이션의 핵심 주제를 Pexels 이미지 검색에 적합한 영어 키워드 1~3개로 변환하세요. 키워드만 출력하세요. 예: 'economy crisis', 'military ship ocean', 'stock market crash'" },
+          { role: "user", content: narration.slice(0, 200) },
+        ],
+        max_tokens: 20,
+        temperature: 0.3,
+      }),
+    });
+    if (!res.ok) return "";
+    const data: any = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+async function composeMultiImageSectionVideo(
+  imagePaths: string[],
+  audioPath: string,
+  outputPath: string,
+  audioDuration: number,
+  isVertical: boolean,
+  narrationText: string,
+  whisperSegments?: WhisperSegment[],
+  logoPath?: string,
+): Promise<void> {
+  if (imagePaths.length <= 1) {
+    return composeSectionVideo(imagePaths[0], audioPath, outputPath, audioDuration, isVertical, narrationText, whisperSegments, logoPath);
+  }
+
+  const width = isVertical ? 1080 : 1920;
+  const height = isVertical ? 1920 : 1080;
+  const totalDur = audioDuration + 1;
+  const fontSize = isVertical ? 72 : 62;
+  const boxPadding = isVertical ? 20 : 16;
+  const subtitleY = isVertical ? "h-h/5" : "h-h/6";
+  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
+  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+
+  const subtitles = whisperSegments && whisperSegments.length > 0
+    ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
+    : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
+
+  const hasLogo = logoPath && fs.existsSync(logoPath);
+  const logoSize = isVertical ? 160 : 200;
+  const imgCount = imagePaths.length;
+  const clipDur = totalDur / imgCount;
+
+  const inputs: string[] = ["-y"];
+  for (const img of imagePaths) {
+    inputs.push("-loop", "1", "-t", clipDur.toFixed(3), "-i", img);
+  }
+  inputs.push("-i", audioPath);
+  if (hasLogo) inputs.push("-i", logoPath!);
+
+  const audioIdx = imgCount;
+  const logoIdx = hasLogo ? imgCount + 1 : -1;
+
+  let filterParts: string[] = [];
+  for (let i = 0; i < imgCount; i++) {
+    const frames = Math.ceil(clipDur * 30);
+    filterParts.push(
+      `[${i}:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
+      `zoompan=z='min(zoom+0.0003,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
+      `setsar=1,format=yuv420p[clip${i}]`
+    );
+  }
+
+  const concatInputs = imagePaths.map((_, i) => `[clip${i}]`).join("");
+  filterParts.push(`${concatInputs}concat=n=${imgCount}:v=1:a=0[merged]`);
+
+  let lastLabel = "[merged]";
+  if (hasLogo) {
+    filterParts.push(`[${logoIdx}:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo]`);
+    filterParts.push(`${lastLabel}[logo]overlay=15:15[withlogo]`);
+    lastLabel = "[withlogo]";
+  }
+
+  let subtitleFilter = "";
+  for (const sub of subtitles) {
+    const safeText = sanitizeForFFmpeg(sub.text);
+    const startT = sub.start.toFixed(3);
+    const endT = sub.end.toFixed(3);
+    subtitleFilter +=
+      `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=white:borderw=3:bordercolor=black` +
+      `:box=1:boxcolor=black@0.6:boxborderw=${boxPadding}` +
+      `:x=(w-text_w)/2:y=${subtitleY}` +
+      `:enable='between(t\\,${startT}\\,${endT})'`;
+  }
+
+  if (subtitleFilter) {
+    filterParts.push(`${lastLabel}${subtitleFilter.slice(1)}[vout]`);
+  } else {
+    filterParts.push(`${lastLabel}copy[vout]`);
+  }
+
+  const filterComplex = filterParts.join(";");
+
+  await execFileAsync("ffmpeg", [
+    ...inputs,
+    "-filter_complex", filterComplex,
+    "-map", "[vout]", "-map", `${audioIdx}:a`,
+    "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+    "-c:a", "aac", "-b:a", "128k",
+    "-t", String(totalDur),
+    "-shortest",
+    outputPath,
+  ], { timeout: 180000 });
+}
+
 function sanitizeForFFmpeg(text: string): string {
   return text
     .replace(/\n/g, " ")
@@ -650,8 +820,8 @@ async function composeSectionVideo(
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
   const frames = Math.ceil(totalDur * 30);
-  const fontSize = isVertical ? 56 : 46;
-  const boxPadding = isVertical ? 16 : 12;
+  const fontSize = isVertical ? 72 : 62;
+  const boxPadding = isVertical ? 20 : 16;
   const subtitleY = isVertical ? "h-h/5" : "h-h/6";
 
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
@@ -679,7 +849,7 @@ async function composeSectionVideo(
     const endT = sub.end.toFixed(3);
     filterComplex +=
       `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=white:borderw=2:bordercolor=black` +
+      `:fontcolor=white:borderw=3:bordercolor=black` +
       `:box=1:boxcolor=black@0.6:boxborderw=${boxPadding}` +
       `:x=(w-text_w)/2:y=${subtitleY}` +
       `:enable='between(t\\,${startT}\\,${endT})'`;
@@ -974,6 +1144,8 @@ export async function generateVideo(
 
     const sectionVideos: string[] = [];
     const insertSubscribeAfter = !isVertical ? Math.floor(script.sections.length / 2) - 1 : -1;
+    const usePexels = project.visualStyle === "cinematic" && !!settingsMap.PEXELS_API_KEY;
+    const pexelsKey = settingsMap.PEXELS_API_KEY || process.env.PEXELS_API_KEY || "";
 
     for (let i = 0; i < script.sections.length; i++) {
       const section = script.sections[i];
@@ -1018,9 +1190,36 @@ export async function generateVideo(
         }
       }
 
+      let sectionImagePaths = [imagePath];
+
+      if (usePexels && audioDuration > 20) {
+        await updateProgress(projectId, Math.round(pctBase + 15), `섹션 ${i + 1}/${script.sections.length}: 보조 이미지 검색 중...`);
+        try {
+          const keyword = await extractPexelsKeyword(section.narration, openaiKey, openaiBaseUrl);
+          if (keyword) {
+            const pexelsCount = audioDuration > 40 ? 2 : 1;
+            const pexelsImages = await fetchPexelsImages(keyword, pexelsCount, projectDir, `sec${i}`, pexelsKey, isVertical);
+            if (pexelsImages.length > 0) {
+              const interleaved: string[] = [imagePath];
+              for (const pi of pexelsImages) {
+                interleaved.push(pi);
+              }
+              sectionImagePaths = interleaved;
+              console.log(`섹션 ${i + 1}: Pexels 보조 이미지 ${pexelsImages.length}장 추가 (키워드: ${keyword})`);
+            }
+          }
+        } catch (e) {
+          console.warn(`Pexels fetch failed for section ${i}, using AI image only:`, e);
+        }
+      }
+
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
-      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+      if (sectionImagePaths.length > 1) {
+        await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+      } else {
+        await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+      }
 
       sectionVideos.push(sectionPath);
 

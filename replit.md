@@ -57,14 +57,16 @@ artifacts-monorepo/
 
 ## Video Generation Pipeline
 
-1. **Script Generation** (GPT-4o): Topic → structured JSON script with sections
+1. **Script Generation** (GPT-4o): Topic → structured JSON script with sections, dynamic narration length per duration
 2. **TTS** (ElevenLabs): Per-section narration audio generation
 3. **Subtitle Timing** (Whisper): Accurate speech-to-text timing via OpenAI Whisper
-4. **Image Generation** (Gemini → OpenAI fallback): Per-section scene images via Gemini 2.5 Flash Image, falls back to gpt-image-1
-5. **Video Composition** (FFmpeg): Ken Burns effect + timed subtitle overlay per section
-6. **Subscribe CTA** (auto): At ~50% mark of long-form videos, a subscribe/bell section is auto-inserted with TTS narration + visual overlay (skipped for Shorts)
-7. **Concatenation** (FFmpeg): Merge all sections into final MP4
-8. **Thumbnail** (gpt-image-1): Auto-generated YouTube-style thumbnail (medium quality)
+4. **Image Generation** (gpt-image-1): Per-section scene images; for cinematic style, supplemented with Pexels stock images
+5. **Pexels Integration** (cinematic only): GPT-4o-mini extracts keywords → Pexels API fetches 1-2 supplementary images per section → multi-image composition with Ken Burns
+6. **Video Composition** (FFmpeg): Ken Burns effect + timed subtitle overlay; multi-image sections use `composeMultiImageSectionVideo`
+7. **Channel Logo Overlay**: Logo displayed top-left on all video sections and thumbnails (200px landscape / 160px portrait)
+8. **Subscribe CTA** (auto): At ~50% mark of long-form videos, a subscribe/bell section is auto-inserted with TTS narration + visual overlay (skipped for Shorts)
+9. **Concatenation** (FFmpeg): Merge all sections into final MP4
+10. **Thumbnail**: User can upload custom thumbnail or AI-generate with gpt-image-1; text overlay (line1=yellow 120px, line2=white 100px)
 
 ## Key Design Decisions
 
@@ -73,9 +75,11 @@ artifacts-monorepo/
 - **Korean UI**: All interface text in Korean
 - **Supported formats**: Long-form (1920x1080) and Shorts (1080x1920)
 - **Visual styles**: Cinematic, Simple Character (stickman), Infographic, Webtoon
-- **Korean subtitles**: Uses NotoSansCJKkr-Bold.otf font (assets/fonts/) via FFmpeg drawtext fontfile parameter
+- **Korean subtitles**: Uses NotoSansCJKkr-Bold.otf font; fontSize 62px(landscape)/72px(portrait), borderw=3, boxPadding 16/20
 - **Ken Burns**: Gentle zoom (0.0003/frame, max 1.12x) with 1.15x pre-scale for smooth motion
 - **Vite proxy**: Frontend proxies /api/* requests to API server (port 8080) for video/file serving
 - **Section counts**: 1min=4, 5min=8, 10min=12, 15min=16 sections (Shorts=3)
-- **Narration**: Each section 3-5 sentences, 80-150+ characters for rich content
+- **Narration length**: Dynamic per duration — 1min: 80-150자, 5min: 200-350자, 10min: 350-500자, 15min: 350-500자
+- **Pexels supplementary images**: Only for cinematic style; other styles (character, infographic, webtoon) use AI images only to avoid style mismatch
+- **Thumbnail upload**: Users can upload custom thumbnails via `/projects/:id/upload-thumbnail`
 - **Grok/xAI**: Optional (requires XAI_API_KEY with credits), falls back to gpt-image-1
