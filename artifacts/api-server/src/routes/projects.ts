@@ -62,10 +62,27 @@ router.post("/projects/:id/generate", async (req, res) => {
     }
 
     if (!settingsMap.OPENAI_API_KEY) {
+      settingsMap.OPENAI_API_KEY = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+    }
+    if (!settingsMap.ELEVENLABS_API_KEY) {
+      settingsMap.ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
+    }
+    if (!settingsMap.XAI_API_KEY) {
+      settingsMap.XAI_API_KEY = process.env.XAI_API_KEY || "";
+    }
+    if (!settingsMap.PEXELS_API_KEY) {
+      settingsMap.PEXELS_API_KEY = process.env.PEXELS_API_KEY || "";
+    }
+
+    if (!settingsMap.OPENAI_API_KEY) {
       return res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다. Settings에서 등록해주세요." });
     }
     if (!settingsMap.ELEVENLABS_API_KEY) {
       return res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다. Settings에서 등록해주세요." });
+    }
+
+    if (!settingsMap.OPENAI_BASE_URL) {
+      settingsMap.OPENAI_BASE_URL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "https://api.openai.com/v1";
     }
 
     await db.update(projects).set({

@@ -41,6 +41,7 @@ async function generateScript(
   visualStyle: string,
   referenceUrl: string | null,
   apiKey: string,
+  baseUrl: string = "https://api.openai.com/v1",
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
@@ -84,7 +85,7 @@ JSON 형식:
   "thumbnailPrompt": "English thumbnail image prompt, bold text overlay, eye-catching"
 }`;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -146,8 +147,9 @@ async function generateImage(
   outputPath: string,
   apiKey: string,
   isVertical: boolean,
+  baseUrl: string = "https://api.openai.com/v1",
 ): Promise<void> {
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
+  const response = await fetch(`${baseUrl}/images/generations`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -223,14 +225,14 @@ async function composeSectionVideo(
     `[0:v]scale=${Math.round(width * 1.3)}:${Math.round(height * 1.3)},` +
     `zoompan=z='min(zoom+0.0008,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
     `setsar=1,format=yuv420p,` +
-    `drawtext=text='${safeSubtitle}':fontsize=${fontSize}:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-h/6[out]`;
+    `drawtext=text='${safeSubtitle}':fontsize=${fontSize}:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-h/6[vout]`;
 
   await execFileAsync("ffmpeg", [
     "-y",
     "-loop", "1", "-i", imagePath,
     "-i", audioPath,
     "-filter_complex", filterComplex,
-    "-map", "[out]", "-map", "1:a",
+    "-map", "[vout]", "-map", "1:a",
     "-c:v", "libx264", "-preset", "fast", "-crf", "23",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
@@ -269,6 +271,7 @@ export async function generateVideo(
   if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
   const openaiKey = settingsMap.OPENAI_API_KEY;
+  const openaiBaseUrl = settingsMap.OPENAI_BASE_URL || "https://api.openai.com/v1";
   const elevenlabsKey = settingsMap.ELEVENLABS_API_KEY;
   const isVertical = project.videoType === "shorts";
 
@@ -282,6 +285,7 @@ export async function generateVideo(
       project.visualStyle,
       project.referenceUrl,
       openaiKey,
+      openaiBaseUrl,
     );
 
     await db.update(projects).set({
@@ -306,7 +310,7 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 생성 중...`);
       const imagePath = path.join(projectDir, `image_${i}.png`);
-      await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical);
+      await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
@@ -322,7 +326,7 @@ export async function generateVideo(
     await updateProgress(projectId, 95, "썸네일 생성 중...");
     const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
     try {
-      await generateImage(script.thumbnailPrompt, thumbPath, openaiKey, false);
+      await generateImage(script.thumbnailPrompt, thumbPath, openaiKey, false, openaiBaseUrl);
     } catch (e) {
       console.warn("Thumbnail generation failed, skipping:", e);
     }
