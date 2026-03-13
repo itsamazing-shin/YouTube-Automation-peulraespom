@@ -55,13 +55,14 @@ async function generateScript(
   };
 
   const styleMap: Record<string, string> = {
-    cinematic: "시네마틱하고 사실적인 장면. 영화 같은 조명과 구도.",
-    "simple-character": "심플한 졸라맨 스타일 캐릭터. 흰 배경, 간단한 선화, 미니멀한 표현.",
-    infographic: "깔끔한 인포그래픽 스타일. 차트, 그래프, 아이콘 중심.",
-    webtoon: "한국 웹툰 스타일의 일러스트레이션. 생동감 있는 색상.",
+    cinematic: "Cinematic photorealistic scene. Dramatic film lighting, professional composition, shallow depth of field.",
+    "simple-character": "Korean 'Jollaman' (졸라맨) stick figure style illustration. Simple round head with dot eyes, thin stick body and limbs. Clean colored background (not white). Comic/manhwa speech bubbles with bold Korean text. Exaggerated emotional expressions through simple body language. Similar to Korean YouTube channel '이상한경제' or '침착맨' animation style. Include scene-relevant props drawn in same minimalist style.",
+    infographic: "Clean modern infographic style. Data charts, graphs, icons, flat design, bold typography, organized layout with clear visual hierarchy.",
+    webtoon: "Korean webtoon illustration style. Vibrant saturated colors, expressive characters, dynamic poses, manhwa-inspired art with clean lines.",
   };
 
   const systemPrompt = `당신은 유튜브 영상 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
+${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시작하세요. 짧고 임팩트 있는 문장을 사용하고, 긴박감과 호기심을 유발하세요. '이거 모르면 손해입니다', '충격적인 사실' 같은 표현을 적극 활용하세요." : ""}
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`;
 
   const userPrompt = `주제: "${topic}"
@@ -209,7 +210,9 @@ function sanitizeForFFmpeg(text: string): string {
     .replace(/%/g, "%%");
 }
 
-function splitNarrationToSubtitles(narration: string, totalDuration: number): Array<{ text: string; start: number; end: number }> {
+function splitNarrationToSubtitles(narration: string, totalDuration: number, isVertical: boolean = false): Array<{ text: string; start: number; end: number }> {
+  const maxCharsPerLine = isVertical ? 12 : 20;
+
   const sentences = narration
     .replace(/([.!?。！？])\s*/g, "$1\n")
     .split("\n")
@@ -225,23 +228,34 @@ function splitNarrationToSubtitles(narration: string, totalDuration: number): Ar
   for (let i = 0; i < sentences.length; i++) {
     const proportion = sentences[i].length / totalChars;
     const duration = proportion * totalDuration;
-    const chunks: string[] = [];
     const sentence = sentences[i];
 
-    if (sentence.length > 25) {
-      const mid = sentence.lastIndexOf(" ", Math.floor(sentence.length / 2));
-      const commaPos = sentence.indexOf(",");
-      const splitPos = commaPos > 5 && commaPos < sentence.length - 5 ? commaPos + 1 : mid > 5 ? mid : Math.floor(sentence.length / 2);
-      chunks.push(sentence.slice(0, splitPos).trim());
-      chunks.push(sentence.slice(splitPos).trim());
+    const lines: string[] = [];
+    if (sentence.length > maxCharsPerLine) {
+      let remaining = sentence;
+      while (remaining.length > maxCharsPerLine) {
+        let splitPos = -1;
+        const commaPos = remaining.lastIndexOf(",", maxCharsPerLine);
+        const spacePos = remaining.lastIndexOf(" ", maxCharsPerLine);
+        if (commaPos > maxCharsPerLine * 0.3) {
+          splitPos = commaPos + 1;
+        } else if (spacePos > maxCharsPerLine * 0.3) {
+          splitPos = spacePos;
+        } else {
+          splitPos = maxCharsPerLine;
+        }
+        lines.push(remaining.slice(0, splitPos).trim());
+        remaining = remaining.slice(splitPos).trim();
+      }
+      if (remaining.length > 0) lines.push(remaining);
     } else {
-      chunks.push(sentence);
+      lines.push(sentence);
     }
 
-    const chunkDur = duration / chunks.length;
-    for (const chunk of chunks) {
+    const chunkDur = duration / lines.length;
+    for (const line of lines) {
       subtitles.push({
-        text: chunk,
+        text: line,
         start: currentTime,
         end: currentTime + chunkDur,
       });
@@ -271,7 +285,7 @@ async function composeSectionVideo(
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
-  const subtitles = splitNarrationToSubtitles(narrationText, audioDuration);
+  const subtitles = splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
 
   let filterComplex =
     `[0:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +

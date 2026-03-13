@@ -170,7 +170,7 @@ export default function ProjectDetail() {
             <video
               controls
               preload="metadata"
-              className="w-full rounded-lg bg-black"
+              className={`rounded-lg bg-black mx-auto ${project.videoType === "shorts" ? "max-h-[500px]" : "w-full"}`}
               src={`${API_BASE}${project.videoUrl}`}
               {...(project.thumbnailUrl ? { poster: `${API_BASE}${project.thumbnailUrl}` } : {})}
             />
