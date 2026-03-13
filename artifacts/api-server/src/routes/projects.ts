@@ -170,6 +170,36 @@ router.post("/projects/:id/regenerate-thumbnail", async (req, res) => {
   }
 });
 
+router.post("/projects/:id/upload-thumbnail", upload.single("thumbnail"), async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    if (!req.file) return res.status(400).json({ error: "썸네일 이미지 파일이 필요합니다." });
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
+    if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+
+    const ext = path.extname(req.file.originalname) || ".png";
+    const thumbFilename = `thumbnail_${projectId}${ext}`;
+    const thumbPath = path.join(projectDir, thumbFilename);
+
+    fs.copyFileSync(req.file.path, thumbPath);
+    fs.unlinkSync(req.file.path);
+
+    const relativePath = `/files/project_${projectId}/${thumbFilename}`;
+    await db.update(projects).set({
+      thumbnailUrl: relativePath,
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+
+    res.json({ success: true, thumbnailUrl: relativePath });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "썸네일 업로드 실패" });
+  }
+});
+
 router.post("/upload-reference-image", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "이미지 파일이 필요합니다." });

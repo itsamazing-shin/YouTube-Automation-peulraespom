@@ -3,8 +3,8 @@ import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText, Image, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText, Image, Sparkles, Upload } from "lucide-react";
+import { useState, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
@@ -52,6 +52,8 @@ export default function ProjectDetail() {
   const queryClient = useQueryClient();
   const [thumbnailPrompt, setThumbnailPrompt] = useState("");
   const [isRegeneratingThumb, setIsRegeneratingThumb] = useState(false);
+  const [isUploadingThumb, setIsUploadingThumb] = useState(false);
+  const thumbInputRef = useRef<HTMLInputElement>(null);
 
   const { data: project, isLoading } = useQuery<ProjectDetail>({
     queryKey: ["project", id],
@@ -206,13 +208,63 @@ export default function ProjectDetail() {
                 className="rounded-lg w-full max-w-md mx-auto"
               />
             )}
+
+            <input
+              ref={thumbInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setIsUploadingThumb(true);
+                try {
+                  const formData = new FormData();
+                  formData.append("thumbnail", file);
+                  const res = await fetch(`${API_BASE}/projects/${id}/upload-thumbnail`, {
+                    method: "POST",
+                    body: formData,
+                  });
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || "업로드 실패");
+                  }
+                  queryClient.invalidateQueries({ queryKey: ["project", id] });
+                  toast({ title: "썸네일 업로드 완료!" });
+                } catch (err: any) {
+                  toast({ title: "썸네일 업로드 실패", description: err.message, variant: "destructive" });
+                } finally {
+                  setIsUploadingThumb(false);
+                  if (thumbInputRef.current) thumbInputRef.current.value = "";
+                }
+              }}
+            />
+            <Button
+              onClick={() => thumbInputRef.current?.click()}
+              disabled={isUploadingThumb}
+              className="w-full"
+            >
+              {isUploadingThumb ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              {isUploadingThumb ? "업로드 중..." : "내 썸네일 이미지 업로드"}
+            </Button>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">또는 AI 생성</span>
+              </div>
+            </div>
+
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">썸네일 프롬프트 (직접 입력)</label>
               <Textarea
-                placeholder="원하는 썸네일을 설명하세요. 예: 놀란 표정의 남자가 돈다발을 보고 있는 장면, 배경은 빨간색, '충격! 이게 가능?' 텍스트"
+                placeholder="원하는 썸네일을 설명하세요. 예: 불타는 유조선과 해협을 막는 군함 장면, 배경은 빨간색"
                 value={thumbnailPrompt}
                 onChange={(e) => setThumbnailPrompt(e.target.value)}
-                rows={3}
+                rows={2}
                 className="resize-none"
               />
               <Button
@@ -242,6 +294,7 @@ export default function ProjectDetail() {
                 }}
                 disabled={isRegeneratingThumb}
                 variant="outline"
+                size="sm"
                 className="w-full"
               >
                 {isRegeneratingThumb ? (
@@ -249,7 +302,7 @@ export default function ProjectDetail() {
                 ) : (
                   <Sparkles className="w-4 h-4 mr-2" />
                 )}
-                {isRegeneratingThumb ? "썸네일 생성 중..." : "썸네일 재생성"}
+                {isRegeneratingThumb ? "AI 썸네일 생성 중..." : "AI 썸네일 재생성"}
               </Button>
             </div>
           </CardContent>
