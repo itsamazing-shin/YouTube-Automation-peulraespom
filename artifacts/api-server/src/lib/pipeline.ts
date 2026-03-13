@@ -61,8 +61,9 @@ async function generateScript(
     webtoon: "Korean webtoon illustration style. Vibrant saturated colors, expressive characters, dynamic poses, manhwa-inspired art with clean lines.",
   };
 
-  const systemPrompt = `당신은 유튜브 영상 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
+  const systemPrompt = `당신은 창의적인 유튜브 영상 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
 ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시작하세요. 짧고 임팩트 있는 문장을 사용하고, 긴박감과 호기심을 유발하세요. '이거 모르면 손해입니다', '충격적인 사실' 같은 표현을 적극 활용하세요." : ""}
+매번 완전히 새로운 시각과 독창적인 구성으로 대본을 작성하세요. 같은 주제라도 이전과 다른 앵글, 다른 예시, 다른 스토리라인으로 접근하세요. 뻔한 서론 대신 의외의 사실이나 충격적인 통계로 시작하세요.
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`;
 
   const userPrompt = `주제: "${topic}"
@@ -98,7 +99,7 @@ JSON 형식:
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      temperature: 0.8,
+      temperature: 1.0,
       response_format: { type: "json_object" },
     }),
   });
