@@ -62,8 +62,9 @@ artifacts-monorepo/
 3. **Subtitle Timing** (Whisper): Accurate speech-to-text timing via OpenAI Whisper
 4. **Image Generation** (Gemini → OpenAI fallback): Per-section scene images via Gemini 2.5 Flash Image, falls back to gpt-image-1
 5. **Video Composition** (FFmpeg): Ken Burns effect + timed subtitle overlay per section
-6. **Concatenation** (FFmpeg): Merge all sections into final MP4
-7. **Thumbnail** (gpt-image-1): Auto-generated YouTube-style thumbnail (medium quality)
+6. **Subscribe CTA** (auto): At ~50% mark of long-form videos, a subscribe/bell section is auto-inserted with TTS narration + visual overlay (skipped for Shorts)
+7. **Concatenation** (FFmpeg): Merge all sections into final MP4
+8. **Thumbnail** (gpt-image-1): Auto-generated YouTube-style thumbnail (medium quality)
 
 ## Key Design Decisions
 

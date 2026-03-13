@@ -69,7 +69,7 @@ async function analyzeReferenceImage(
       messages: [
         {
           role: "system",
-          content: "You are an expert visual style analyst. Analyze the given image and describe its visual style in detail for use as image generation guidance. Focus on: art style, color palette, line work, character design, composition, mood/atmosphere, rendering technique. Output in English only. Be specific and concise (3-5 sentences).",
+          content: "You are an expert visual style analyst for AI image generation. Analyze the given image and output a PRECISE, REUSABLE style description that can be directly prepended to any image generation prompt. Format: 'Style: [art technique], [line work], [color palette specifics], [character design details if any], [rendering method], [mood/lighting].' Be extremely specific about visual characteristics (e.g. 'thick black outlines 3px', 'flat cel-shaded colors', 'round simple dot-eyes characters', 'saturated red/yellow/blue palette'). Output in English only. Max 4 sentences. The description must be concrete enough that a different AI can reproduce the exact same visual style.",
         },
         {
           role: "user",
@@ -254,7 +254,15 @@ ${commentAnalysis ? `\n📊 시청자 댓글 분석 결과:\n${commentAnalysis}\
 ${sectionCount}개 섹션으로 구성된 ${isShorts ? "유튜브 쇼츠(세로형 60초)" : "유튜브 롱폼 영상"} 대본을 작성하세요.
 
 이미지 프롬프트는 "${styleMap[visualStyle] || styleMap.cinematic}" 스타일로 작성하세요.
-${referenceStyleDesc ? `\n🎨 참조 이미지 스타일 분석 결과:\n${referenceStyleDesc}\n\n위 스타일을 최대한 반영하여 모든 섹션의 이미지 프롬프트를 작성하세요. 참조 이미지의 화풍, 색감, 선 스타일, 캐릭터 디자인을 일관되게 유지하세요.\n` : ""}
+${referenceStyleDesc ? `\n🎨 참조 이미지 스타일 (최우선 적용 — 모든 섹션 이미지에 반드시 이 스타일을 따르세요!):\n${referenceStyleDesc}\n\n⚠️ 중요: 위 참조 스타일이 기본 스타일보다 우선합니다. 모든 이미지 프롬프트의 맨 앞에 참조 스타일의 핵심 특징을 명시하세요. 참조 이미지와 동일한 화풍, 색감, 선 스타일, 캐릭터 디자인으로 통일하세요. 프롬프트 시작을 "In the exact style of the reference: [핵심특징]..." 으로 시작하세요.\n` : ""}
+
+⚠️ 이미지 프롬프트 품질 규칙:
+- 프롬프트는 영어로, 핵심 장면을 구체적으로 묘사하세요
+- 분위기/조명/구도를 명확하게 지정하세요
+- 인물이 있다면 표정, 자세, 의상을 구체적으로 묘사하세요
+- 배경을 반드시 포함하세요 (도시, 사무실, 전쟁터, 국회의사당 등)
+- "professional digital illustration", "high detail", "dramatic lighting" 같은 품질 키워드를 포함하세요
+- 절대 텍스트/글자/문자를 이미지에 포함하지 마세요
 
 JSON 형식:
 {
@@ -778,6 +786,87 @@ function splitThumbnailText(text: string): { mainLines: string[]; subText: strin
 }
 
 
+async function createSubscribeImage(
+  outputPath: string,
+  isVertical: boolean,
+): Promise<void> {
+  const w = isVertical ? 1080 : 1920;
+  const h = isVertical ? 1920 : 1080;
+  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
+  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+
+  const bellSize = isVertical ? 120 : 160;
+  const bellY = isVertical ? Math.round(h * 0.22) : Math.round(h * 0.12);
+  const titleFontSize = isVertical ? 60 : 80;
+  const subFontSize = isVertical ? 36 : 48;
+  const titleY = bellY + bellSize + 30;
+  const subY = titleY + titleFontSize + 20;
+  const btnW = isVertical ? 500 : 600;
+  const btnH = isVertical ? 80 : 90;
+  const btnY = subY + subFontSize + 50;
+  const btnX = Math.round((w - btnW) / 2);
+  const btnFontSize = isVertical ? 40 : 50;
+  const bellBtnW = isVertical ? 420 : 500;
+  const bellBtnH = isVertical ? 70 : 80;
+  const bellBtnY = btnY + btnH + 25;
+  const bellBtnX = Math.round((w - bellBtnW) / 2);
+  const bellBtnFontSize = isVertical ? 34 : 44;
+
+  let filterComplex =
+    `color=c=#1a1a2e:s=${w}x${h}:d=1[bg];` +
+    `[bg]drawbox=x=${Math.round(w/2 - bellSize/2)}:y=${bellY}:w=${bellSize}:h=${bellSize}:color=#FFD700:t=fill,` +
+    `drawtext=text='\\🔔':fontsize=${bellSize - 20}:fontcolor=#1a1a2e:x=(w-text_w)/2:y=${bellY + 10},` +
+    `drawtext=text='구독과 알림 설정':fontfile='${safeFontPath}':fontsize=${titleFontSize}:fontcolor=#FFFFFF:borderw=3:bordercolor=black:x=(w-text_w)/2:y=${titleY},` +
+    `drawtext=text='잊지 마세요!':fontfile='${safeFontPath}':fontsize=${subFontSize}:fontcolor=#AAAAAA:x=(w-text_w)/2:y=${subY},` +
+    `drawbox=x=${btnX}:y=${btnY}:w=${btnW}:h=${btnH}:color=#FF0000:t=fill,` +
+    `drawtext=text='♥ 구독':fontfile='${safeFontPath}':fontsize=${btnFontSize}:fontcolor=white:borderw=2:bordercolor=#CC0000:x=(w-text_w)/2:y=${btnY + Math.round((btnH - btnFontSize) / 2)},` +
+    `drawbox=x=${bellBtnX}:y=${bellBtnY}:w=${bellBtnW}:h=${bellBtnH}:color=#333333:t=fill,` +
+    `drawtext=text='🔔 알림 설정':fontfile='${safeFontPath}':fontsize=${bellBtnFontSize}:fontcolor=#FFD700:borderw=2:bordercolor=black:x=(w-text_w)/2:y=${bellBtnY + Math.round((bellBtnH - bellBtnFontSize) / 2)}`;
+
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-f", "lavfi", "-i", `color=c=#1a1a2e:s=${w}x${h}:d=1`,
+    "-vf",
+    `drawbox=x=${Math.round(w/2 - bellSize/2)}:y=${bellY}:w=${bellSize}:h=${bellSize}:color=#FFD700:t=fill,` +
+    `drawtext=text='구독과 알림 설정':fontfile='${safeFontPath}':fontsize=${titleFontSize}:fontcolor=#FFFFFF:borderw=3:bordercolor=black:x=(w-text_w)/2:y=${titleY},` +
+    `drawtext=text='잊지 마세요!':fontfile='${safeFontPath}':fontsize=${subFontSize}:fontcolor=#AAAAAA:x=(w-text_w)/2:y=${subY},` +
+    `drawbox=x=${btnX}:y=${btnY}:w=${btnW}:h=${btnH}:color=#FF0000:t=fill,` +
+    `drawtext=text='구독':fontfile='${safeFontPath}':fontsize=${btnFontSize}:fontcolor=white:borderw=2:bordercolor=#CC0000:x=(w-text_w)/2:y=${btnY + Math.round((btnH - btnFontSize) / 2)},` +
+    `drawbox=x=${bellBtnX}:y=${bellBtnY}:w=${bellBtnW}:h=${bellBtnH}:color=#333333:t=fill,` +
+    `drawtext=text='알림 설정':fontfile='${safeFontPath}':fontsize=${bellBtnFontSize}:fontcolor=#FFD700:borderw=2:bordercolor=black:x=(w-text_w)/2:y=${bellBtnY + Math.round((bellBtnH - bellBtnFontSize) / 2)}`,
+    "-frames:v", "1",
+    outputPath,
+  ], { timeout: 30000 });
+}
+
+const SUBSCRIBE_NARRATION = "이 영상을 보면서 로또에 당첨되고 싶다면, 지금 바로 구독과 알림 설정 누르세요! 당첨 확률이 올라간다는 소문이 있습니다.";
+
+async function createSubscribeSectionVideo(
+  projectDir: string,
+  isVertical: boolean,
+  elevenlabsKey: string,
+): Promise<string> {
+  const subscribeImgPath = path.join(projectDir, "subscribe_img.png");
+  const subscribeAudioPath = path.join(projectDir, "subscribe_audio.mp3");
+  const subscribeVideoPath = path.join(projectDir, "subscribe_section.mp4");
+
+  await createSubscribeImage(subscribeImgPath, isVertical);
+  await generateTTS(SUBSCRIBE_NARRATION, subscribeAudioPath, elevenlabsKey);
+
+  const audioDuration = await getAudioDuration(subscribeAudioPath);
+
+  await composeSectionVideo(
+    subscribeImgPath,
+    subscribeAudioPath,
+    subscribeVideoPath,
+    audioDuration,
+    isVertical,
+    SUBSCRIBE_NARRATION,
+  );
+
+  return subscribeVideoPath;
+}
+
 async function concatenateVideos(
   videoPaths: string[],
   outputPath: string,
@@ -865,6 +954,7 @@ export async function generateVideo(
     }).where(eq(projects.id, projectId));
 
     const sectionVideos: string[] = [];
+    const insertSubscribeAfter = !isShorts ? Math.floor(script.sections.length / 2) - 1 : -1;
 
     for (let i = 0; i < script.sections.length; i++) {
       const section = script.sections[i];
@@ -914,6 +1004,17 @@ export async function generateVideo(
       await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments);
 
       sectionVideos.push(sectionPath);
+
+      if (i === insertSubscribeAfter) {
+        await updateProgress(projectId, Math.round(pctBase + 25), "구독 유도 섹션 생성 중...");
+        try {
+          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey);
+          sectionVideos.push(subscribeVideoPath);
+          console.log("구독 유도 섹션 삽입 완료");
+        } catch (subErr: any) {
+          console.warn("구독 유도 섹션 생성 실패, 건너뜀:", subErr.message);
+        }
+      }
     }
 
     await updateProgress(projectId, 88, "섹션 합치는 중...");
