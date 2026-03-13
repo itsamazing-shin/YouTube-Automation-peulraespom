@@ -5,8 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const ELEVENLABS_VOICES = [
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", description: "남성, 깊고 차분한 목소리" },
+  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", description: "남성, 부드럽고 따뜻한 목소리" },
+  { id: "VR6AewLTigWG4xSOukaG", name: "Arnold", description: "남성, 강하고 힘 있는 목소리" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", description: "여성, 차분하고 전문적인 목소리" },
+  { id: "AZnzlk1XvdvUeBnXmlld", name: "Domi", description: "여성, 활기차고 밝은 목소리" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", description: "여성, 부드럽고 자연스러운 목소리" },
+  { id: "MF3mGyEYCl7XYWbV9V6O", name: "Elli", description: "여성, 젊고 가벼운 목소리" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh", description: "남성, 젊고 에너지 넘치는 목소리" },
+  { id: "yoZ06aMxZJJ28mfd3POQ", name: "Sam", description: "남성, 따뜻하고 친근한 목소리" },
+  { id: "jBpfuIE2acCO8z3wKNLl", name: "Gigi", description: "여성, 밝고 활발한 목소리" },
+];
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, '/');
 
@@ -185,6 +199,37 @@ export default function Settings() {
           );
         })}
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Mic className="w-4 h-4" />
+            <CardTitle className="text-base">나레이션 음성</CardTitle>
+            <Badge variant="outline" className="text-xs">선택</Badge>
+          </div>
+          <CardDescription>ElevenLabs TTS 음성을 선택하세요. 모든 음성은 한국어를 지원합니다.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select
+            value={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB"}
+            onValueChange={(val) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: val }))}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="음성 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              {ELEVENLABS_VOICES.map((voice) => (
+                <SelectItem key={voice.id} value={voice.id}>
+                  <div className="flex flex-col">
+                    <span className="font-medium">{voice.name}</span>
+                    <span className="text-xs text-muted-foreground">{voice.description}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       <Button
         className="w-full"

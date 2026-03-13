@@ -343,8 +343,9 @@ async function generateTTS(
   text: string,
   outputPath: string,
   apiKey: string,
+  voiceId: string = "pNInz6obpgDQGcFmaJgB",
 ): Promise<void> {
-  const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB", {
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1026,13 +1027,14 @@ async function createSubscribeSectionVideo(
   openaiKey: string,
   openaiBaseUrl: string = "https://api.openai.com/v1",
   logoPath?: string,
+  voiceId: string = "pNInz6obpgDQGcFmaJgB",
 ): Promise<string> {
   const subscribeImgPath = path.join(projectDir, "subscribe_img.png");
   const subscribeAudioPath = path.join(projectDir, "subscribe_audio.mp3");
   const subscribeVideoPath = path.join(projectDir, "subscribe_section.mp4");
 
   await createSubscribeImage(subscribeImgPath, isVertical, openaiKey, openaiBaseUrl);
-  await generateTTS(SUBSCRIBE_NARRATION, subscribeAudioPath, elevenlabsKey);
+  await generateTTS(SUBSCRIBE_NARRATION, subscribeAudioPath, elevenlabsKey, voiceId);
 
   const audioDuration = await getAudioDuration(subscribeAudioPath);
 
@@ -1082,6 +1084,7 @@ export async function generateVideo(
   const openaiKey = settingsMap.OPENAI_API_KEY;
   const openaiBaseUrl = settingsMap.OPENAI_BASE_URL || "https://api.openai.com/v1";
   const elevenlabsKey = settingsMap.ELEVENLABS_API_KEY;
+  const elevenlabsVoiceId = settingsMap.ELEVENLABS_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
   const isVertical = project.videoType === "shorts";
 
   let videoLogoPath: string | undefined;
@@ -1153,7 +1156,7 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase), `섹션 ${i + 1}/${script.sections.length}: TTS 생성 중...`);
       const audioPath = path.join(projectDir, `audio_${i}.mp3`);
-      await generateTTS(section.narration, audioPath, elevenlabsKey);
+      await generateTTS(section.narration, audioPath, elevenlabsKey, elevenlabsVoiceId);
 
       const audioDuration = await getAudioDuration(audioPath);
 
@@ -1226,7 +1229,7 @@ export async function generateVideo(
       if (i === insertSubscribeAfter) {
         await updateProgress(projectId, Math.round(pctBase + 25), "구독 유도 섹션 생성 중...");
         try {
-          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl, videoLogoPath);
+          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl, videoLogoPath, elevenlabsVoiceId);
           sectionVideos.push(subscribeVideoPath);
           console.log("구독 유도 섹션 삽입 완료");
         } catch (subErr: any) {

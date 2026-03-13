@@ -5,7 +5,8 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
-const ALLOWED_KEYS = new Set(["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "XAI_API_KEY", "PEXELS_API_KEY"]);
+const ALLOWED_KEYS = new Set(["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "XAI_API_KEY", "PEXELS_API_KEY", "YOUTUBE_API_KEY", "ELEVENLABS_VOICE_ID"]);
+const NON_SECRET_KEYS = new Set(["ELEVENLABS_VOICE_ID"]);
 
 function maskApiKey(value: string): string {
   if (!value || value.length < 8) return "••••••••";
@@ -19,7 +20,7 @@ router.get("/settings", async (_req, res) => {
       .filter((s) => ALLOWED_KEYS.has(s.key))
       .map((s) => ({
         key: s.key,
-        value: maskApiKey(s.value),
+        value: NON_SECRET_KEYS.has(s.key) ? s.value : maskApiKey(s.value),
         label: s.label,
         hasValue: !!s.value?.trim(),
       }));
@@ -38,7 +39,10 @@ router.put("/settings", async (req, res) => {
 
     for (const [key, value] of Object.entries(settingsData)) {
       if (!ALLOWED_KEYS.has(key)) continue;
-      if (!value || !value.trim()) continue;
+      if (!value || !value.trim()) {
+        if (NON_SECRET_KEYS.has(key)) continue;
+        continue;
+      }
 
       const existing = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
       if (existing.length > 0) {
