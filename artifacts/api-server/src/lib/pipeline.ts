@@ -876,17 +876,29 @@ async function composeMultiImageSectionVideo(
   const listPath = outputPath.replace(".mp4", "_cliplist.txt");
   fs.writeFileSync(listPath, clipPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"));
 
-  await runFFmpeg([
+  const safeSrtPath = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+  const hasSubs = subtitles.length > 0 && fs.existsSync(srtPath);
+
+  const concatArgs = [
     "-y", "-f", "concat", "-safe", "0",
     "-i", listPath,
     "-i", audioPath,
-    "-c:v", "copy",
+  ];
+  if (hasSubs) {
+    concatArgs.push("-vf", `subtitles='${safeSrtPath}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=40'`);
+    concatArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-r", "1", "-pix_fmt", "yuv420p");
+  } else {
+    concatArgs.push("-c:v", "copy");
+  }
+  concatArgs.push(
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
     "-movflags", "+faststart",
     outputPath,
-  ], 120000);
+  );
+
+  await runFFmpeg(concatArgs, 300000);
 
   for (const cp of clipPaths) { try { fs.unlinkSync(cp); } catch {} }
   try { fs.unlinkSync(listPath); } catch {}
@@ -1033,10 +1045,21 @@ async function composeSectionVideo(
 
   console.log(`[composeSectionVideo] 스케일 완료, 직접 인코딩 시작 (${Math.ceil(totalDur)}프레임@1fps)`);
 
-  await runFFmpeg([
+  const safeSrtPath = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+  const hasSubs = subtitles.length > 0 && fs.existsSync(srtPath);
+  const vfFilter = hasSubs
+    ? `subtitles='${safeSrtPath}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=40'`
+    : null;
+
+  const ffArgs = [
     "-y",
     "-loop", "1", "-i", scaledImgPath,
     "-i", audioPath,
+  ];
+  if (vfFilter) {
+    ffArgs.push("-vf", vfFilter);
+  }
+  ffArgs.push(
     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
     "-crf", "30", "-r", "1", "-g", "10",
     "-pix_fmt", "yuv420p",
@@ -1045,7 +1068,9 @@ async function composeSectionVideo(
     "-shortest",
     "-movflags", "+faststart",
     outputPath,
-  ], 300000);
+  );
+
+  await runFFmpeg(ffArgs, 300000);
 
   try { fs.unlinkSync(scaledImgPath); } catch {}
   try { fs.unlinkSync(srtPath); } catch {}
