@@ -62,11 +62,12 @@ artifacts-monorepo/
 3. **Subtitle Timing** (Whisper): Accurate speech-to-text timing via OpenAI Whisper
 4. **Image Generation** (gpt-image-1): Per-section scene images; for cinematic style, supplemented with Pexels stock images
 5. **Pexels Integration** (cinematic only): GPT-4o-mini extracts keywords → Pexels API fetches 1-2 supplementary images per section → multi-image composition with Ken Burns
-6. **Video Composition** (FFmpeg): Ken Burns effect + timed subtitle overlay; multi-image sections use `composeMultiImageSectionVideo`
-7. **Channel Logo Overlay**: Logo displayed top-left on all video sections and thumbnails (200px landscape / 160px portrait)
-8. **Subscribe CTA** (auto): At ~50% mark of long-form videos, a subscribe/bell section is auto-inserted with TTS narration + visual overlay (skipped for Shorts)
-9. **Concatenation** (FFmpeg): Merge all sections into final MP4
-10. **Thumbnail**: User can upload custom thumbnail or AI-generate with gpt-image-1; text overlay (line1=yellow 120px, line2=white 100px)
+6. **Video Composition** (FFmpeg): Static image + audio mux with scale/pad filter only (no drawtext, no zoompan — removed for production reliability). Uses `spawn` for FFmpeg process management (no buffer overflow). 24fps, ultrafast preset, CRF 28.
+7. **Subtitles**: Generated as SRT files per section (not hardcoded into video via drawtext — too CPU-heavy for production). SRT available for download/embedding.
+8. **Channel Logo Overlay**: Logo displayed top-left on all video sections and thumbnails (200px landscape / 160px portrait)
+9. **Subscribe CTA** (auto): At ~50% mark of long-form videos, a subscribe/bell section is auto-inserted with TTS narration + visual overlay (skipped for Shorts)
+10. **Concatenation** (FFmpeg): Merge all sections into final MP4 with `-c copy` (no re-encode)
+11. **Thumbnail**: User can upload custom thumbnail or AI-generate with gpt-image-1; text overlay (line1=yellow 120px, line2=white 100px). Font path uses multi-candidate resolution for dev/prod compatibility.
 
 ## Key Design Decisions
 
@@ -75,8 +76,8 @@ artifacts-monorepo/
 - **Korean UI**: All interface text in Korean
 - **Supported formats**: Long-form (1920x1080) and Shorts (1080x1920)
 - **Visual styles**: Cinematic, Simple Character (stickman), Infographic, Webtoon
-- **Korean subtitles**: Uses NotoSansCJKkr-Bold.otf font; fontSize 62px(landscape)/72px(portrait), borderw=3, boxPadding 16/20
-- **Ken Burns**: Gentle zoom (0.0003/frame, max 1.12x) with 1.15x pre-scale for smooth motion
+- **FFmpeg production constraints**: No drawtext chains (hangs on limited CPU), no zoompan (too slow). Only scale+pad for video, drawtext only for single-image thumbnail. Uses `spawn` instead of `execFile` (buffer overflow prevention).
+- **Font path**: Multi-candidate resolution (`cwd/assets`, `cwd/../assets`, `cwd/../../assets`, absolute fallback) for dev/prod compatibility
 - **Vite proxy**: Frontend proxies /api/* requests to API server (port 8080) for video/file serving
 - **Section counts**: 1min=4, 5min=8, 10min=12, 15min=16 sections (Shorts=3)
 - **Narration length**: Dynamic per duration — 1min: 80-150자, 5min: 200-350자, 10min: 350-500자, 15min: 350-500자

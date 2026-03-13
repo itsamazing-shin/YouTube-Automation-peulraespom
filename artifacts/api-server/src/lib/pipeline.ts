@@ -1018,7 +1018,13 @@ async function overlayTextOnImage(
   isVertical: boolean,
   logoPath?: string,
 ): Promise<void> {
-  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
+  const fontCandidates = [
+    path.resolve(process.cwd(), "assets", "fonts", "NotoSansCJKkr-Bold.otf"),
+    path.resolve(process.cwd(), "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf"),
+    path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf"),
+    "/home/runner/workspace/assets/fonts/NotoSansCJKkr-Bold.otf",
+  ];
+  const fontPath = fontCandidates.find(f => fs.existsSync(f)) || fontCandidates[0];
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
   const { line1, line2 } = splitThumbnailTwoLines(text);
