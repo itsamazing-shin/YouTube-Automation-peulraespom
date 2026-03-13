@@ -746,11 +746,10 @@ async function composeMultiImageSectionVideo(
 
   let filterParts: string[] = [];
   for (let i = 0; i < imgCount; i++) {
-    const frames = Math.ceil(clipDur * 30);
     filterParts.push(
-      `[${i}:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
-      `zoompan=z='min(zoom+0.0003,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
-      `setsar=1,format=yuv420p[clip${i}]`
+      `[${i}:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
+      `setsar=1,format=yuv420p,fps=24[clip${i}]`
     );
   }
 
@@ -789,7 +788,8 @@ async function composeMultiImageSectionVideo(
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", `${audioIdx}:a`,
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+    "-r", "24",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
@@ -916,7 +916,6 @@ async function composeSectionVideo(
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
-  const frames = Math.ceil(totalDur * 30);
   const fontSize = isVertical ? 72 : 62;
   const boxPadding = isVertical ? 20 : 16;
   const subtitleY = isVertical ? "h-h/5" : "h-h/6";
@@ -932,8 +931,8 @@ async function composeSectionVideo(
   const logoSize = isVertical ? 160 : 200;
 
   let filterComplex =
-    `[0:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
-    `zoompan=z='min(zoom+0.0003,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
+    `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
     `setsar=1,format=yuv420p`;
 
   if (hasLogo) {
@@ -956,7 +955,7 @@ async function composeSectionVideo(
 
   const inputs = [
     "-y",
-    "-loop", "1", "-i", imagePath,
+    "-loop", "1", "-framerate", "24", "-i", imagePath,
     "-i", audioPath,
   ];
   if (hasLogo) {
@@ -967,7 +966,8 @@ async function composeSectionVideo(
     ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", "1:a",
-    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+    "-r", "24",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
