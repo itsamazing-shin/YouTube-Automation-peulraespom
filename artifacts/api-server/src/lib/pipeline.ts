@@ -222,6 +222,18 @@ async function generateScript(
 
   const sectionCount = isShorts ? 3 : duration === "1min" ? 4 : duration === "5min" ? 8 : duration === "10min" ? 12 : 16;
 
+  const narrationGuide = isShorts
+    ? "반드시 2~3문장, 총 50~80자. 짧고 임팩트 있게."
+    : duration === "1min"
+    ? "반드시 3~5문장, 총 80~150자."
+    : duration === "5min"
+    ? "반드시 6~10문장, 총 200~350자. 구체적 사례와 수치를 포함하여 풍부하게 서술."
+    : duration === "10min"
+    ? "반드시 10~15문장, 총 350~500자. 깊이 있는 분석과 구체적 사례, 배경 설명, 수치, 전문가 의견 등을 포함하여 매우 풍부하고 상세하게 서술. 하나의 소주제를 충분히 깊게 파고들어야 합니다."
+    : "반드시 10~15문장, 총 350~500자. 깊이 있는 분석과 구체적 사례, 배경 설명, 수치, 전문가 의견 등을 포함하여 매우 풍부하고 상세하게 서술. 하나의 소주제를 충분히 깊게 파고들어야 합니다.";
+
+  const targetDurationPerSection = isShorts ? 15 : duration === "1min" ? 15 : duration === "5min" ? 35 : duration === "10min" ? 50 : 55;
+
   const toneMap: Record<string, string> = {
     calm: "차분하고 설득력 있는 톤으로, 시청자가 깊이 생각하게 만드는",
     energetic: "활기차고 열정적인 톤으로, 에너지 넘치는",
@@ -237,8 +249,17 @@ async function generateScript(
     webtoon: "Korean webtoon illustration style. Vibrant saturated colors, expressive characters, dynamic poses, manhwa-inspired art with clean lines.",
   };
 
+  const totalTargetSeconds = isShorts ? 60 : duration === "1min" ? 60 : duration === "5min" ? 300 : duration === "10min" ? 600 : 900;
+  const totalTargetMin = Math.round(totalTargetSeconds / 60);
+
   const systemPrompt = `당신은 한국 유튜브 조회수 폭발 전문 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
 ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시작하세요. 짧고 임팩트 있는 문장을 사용하고, 긴박감과 호기심을 유발하세요." : ""}
+
+⏱️ 영상 총 목표 길이: 약 ${totalTargetMin}분 (${totalTargetSeconds}초)
+- 총 ${sectionCount}개 섹션, 섹션당 약 ${targetDurationPerSection}초씩
+- 한국어 TTS는 약 1초에 5~6자를 읽으므로, 섹션당 나레이션은 최소 ${Math.round(targetDurationPerSection * 5)}자 이상 필요합니다
+- 나레이션이 짧으면 영상이 목표 길이보다 훨씬 짧아지니 반드시 충분한 분량을 작성하세요
+- ${narrationGuide}
 
 🔥 제목 & 썸네일 텍스트 작성 핵심 규칙:
 - title: 유튜브 검색/추천에 노출될 전체 제목 (20~40자). 큰따옴표로 핵심 문구를 감싸서 강조. 예: "중국 경제 완전 붕괴" 14억 대륙의 충격적 최후
@@ -282,10 +303,10 @@ JSON 형식:
   "thumbnailText": "썸네일 후킹 문구를 반드시 2줄로 작성. 줄바꿈은 \\n으로 구분. 각 줄 8~12자. 예: '중국 경제\\n완전 붕괴', '14억 대륙\\n파멸의 최후', '트럼프의 소름\\n돋는 실체'. 윗줄은 노란색, 아랫줄은 흰색으로 표시됨",
   "sections": [
     {
-      "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
+      "narration": "나레이션 텍스트 (${narrationGuide})",
       "imagePrompt": "English-only image prompt for this scene. CRITICAL: Do NOT include ANY text, letters, words, signs, labels, speech bubbles with text, or writing of ANY language in the image. The image must be purely visual with ZERO text elements. Leave empty speech bubbles or blank signs if needed — text will be added separately. Style: ${styleMap[visualStyle] || styleMap.cinematic}",
       "subtitleHighlight": "핵심 자막 (짧은 문구)",
-      "duration": ${isShorts ? 15 : 30}
+      "duration": ${targetDurationPerSection}
     }
   ],
   "thumbnailPrompt": "이 필드에 영상 주제에 딱 맞는 구체적인 썸네일 이미지 프롬프트를 영어로 작성하세요. 반드시 지켜야 할 규칙: 1) 영상 주제의 핵심 내용을 시각적으로 보여주는 구체적 장면을 묘사 (예: 호르무즈 해협 봉쇄 → 해협을 막고 있는 전함과 불타는 유조선, 중국 경제 붕괴 → 무너지는 중국 도시 스카이라인과 하락하는 그래프를 형상화한 배경). 2) 단순히 사람 얼굴만 넣지 말 것 — 주제를 상징하는 배경/소품/상황이 반드시 포함되어야 함. 3) 텍스트/글자/문자 절대 포함하지 말 것. 4) 고대비 채도 높은 색상, 빨강/노랑/주황 강조. 5) 구도: 주요 피사체를 오른쪽에, 왼쪽 40%는 텍스트 오버레이 공간으로 비워둘 것. 6) 긴박감 있는 줌인 효과. Style: MrBeast/한국 탑 유튜버 썸네일 퀄리티."
