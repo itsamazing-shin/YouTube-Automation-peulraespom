@@ -922,13 +922,14 @@ async function composeMultiImageSectionVideo(
 
   const clipPaths: string[] = [];
   for (let i = 0; i < imgCount; i++) {
-    const scaledPath = outputPath.replace(".mp4", `_img${i}_scaled.png`);
+    const scaledPath = outputPath.replace(".mp4", `_img${i}_scaled.jpg`);
     await runFFmpeg([
       "-y", "-i", imagePaths[i],
-      "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+      "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuvj420p`,
+      "-q:v", "2",
       "-frames:v", "1",
       scaledPath,
-    ], 30000);
+    ], 60000);
 
     const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
     await runFFmpeg([
@@ -1110,13 +1111,14 @@ async function composeSectionVideo(
   const srtPath = outputPath.replace(".mp4", ".srt");
   fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
 
-  const scaledImgPath = outputPath.replace(".mp4", "_scaled.png");
+  const scaledImgPath = outputPath.replace(".mp4", "_scaled.jpg");
   await runFFmpeg([
     "-y", "-i", imagePath,
-    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black`,
+    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuvj420p`,
+    "-q:v", "2",
     "-frames:v", "1",
     scaledImgPath,
-  ], 30000);
+  ], 60000);
 
   console.log(`[composeSectionVideo] 스케일 완료, 직접 인코딩 시작 (${Math.ceil(totalDur)}프레임@1fps)`);
 
