@@ -1426,7 +1426,7 @@ export async function generateVideo(
         if (sectionImagePaths.length > 1) {
           await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
         } else {
-          await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+          await composeSectionVideo(sectionImagePaths[0], audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
         }
         console.log(`섹션 ${i + 1} 영상 합성 완료`);
       } catch (composeErr: any) {
