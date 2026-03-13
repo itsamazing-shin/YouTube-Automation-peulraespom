@@ -206,6 +206,99 @@ interface VideoScript {
   thumbnailPrompt: string;
 }
 
+async function searchLatestNews(
+  topic: string,
+  apiKey: string,
+  baseUrl: string = "https://api.openai.com/v1",
+): Promise<string> {
+  try {
+    const today = new Date();
+    const dateStr = `${today.getFullYear()}년 ${today.getMonth() + 1}월 ${today.getDate()}일`;
+
+    const responsesUrl = baseUrl.replace(/\/v1\/?$/, "/v1/responses");
+
+    const response = await fetch(responsesUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        tools: [{ type: "web_search_preview" }],
+        input: `오늘은 ${dateStr}입니다. "${topic}" 관련 최신 뉴스와 이슈를 검색해서 정리해주세요.
+
+반드시 지켜야 할 규칙:
+- 최근 1~3개월 이내의 가장 핫한 뉴스와 사건만 정리
+- 구체적인 날짜, 수치, 관련 인물/국가를 포함
+- 현재 진행 중이거나 최근 발생한 이슈 중심
+- 오래된 과거 사건은 제외
+- 500자 이내로 핵심만 간결하게 정리
+- 한국어로 작성`,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn("Responses API 실패, Chat Completions 폴백 시도");
+      const fallbackResponse = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: `오늘은 ${dateStr}입니다. 당신은 최신 뉴스 리서처입니다. 주어진 주제에 대해 가장 최근의 뉴스, 이슈, 사건을 정리해주세요.
+반드시 2024년~2026년 사이의 최신 사건을 중심으로 작성하세요.
+오래된 과거 사건이 아닌, 현재 진행 중이거나 최근에 발생한 이슈를 다루세요.
+구체적인 날짜, 수치, 관련 인물/국가를 포함하세요.
+500자 이내로 핵심만 정리하세요.`,
+            },
+            {
+              role: "user",
+              content: `"${topic}" 관련 최신 뉴스와 이슈를 정리해주세요. 특히 최근 1~3개월 이내의 가장 핫한 이슈를 중심으로 알려주세요.`,
+            },
+          ],
+          temperature: 0.3,
+          max_tokens: 800,
+        }),
+      });
+
+      if (!fallbackResponse.ok) return "";
+      const fallbackData = await fallbackResponse.json();
+      return fallbackData.choices?.[0]?.message?.content || "";
+    }
+
+    const data = await response.json();
+
+    let newsContent = "";
+    if (data.output) {
+      for (const item of data.output) {
+        if (item.type === "message" && item.content) {
+          for (const c of item.content) {
+            if (c.type === "output_text") {
+              newsContent += c.text;
+            }
+          }
+        }
+      }
+    }
+
+    if (!newsContent && data.choices?.[0]?.message?.content) {
+      newsContent = data.choices[0].message.content;
+    }
+
+    console.log("최신 뉴스 검색 결과:", newsContent.substring(0, 200));
+    return newsContent;
+  } catch (e) {
+    console.warn("최신 뉴스 검색 실패:", e);
+    return "";
+  }
+}
+
 async function generateScript(
   topic: string,
   videoType: string,
@@ -217,6 +310,7 @@ async function generateScript(
   baseUrl: string = "https://api.openai.com/v1",
   commentAnalysis: string = "",
   referenceStyleDesc: string = "",
+  latestNewsContext: string = "",
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
@@ -282,6 +376,7 @@ ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`;
 
   const userPrompt = `주제: "${topic}"
+${latestNewsContext ? `\n📰 최신 뉴스/이슈 (반드시 이 내용을 기반으로 대본을 작성하세요!):\n${latestNewsContext}\n\n⚠️ 위 최신 뉴스를 대본의 핵심 내용으로 사용하세요. 오래된 과거 사건이 아닌, 위에 정리된 최신 이슈를 중심으로 대본을 구성해야 합니다. 구체적인 날짜, 수치, 최근 사건을 반드시 포함하세요.\n` : ""}
 ${referenceUrl ? `참고 영상 URL: ${referenceUrl}\n(위 영상은 주제와 톤의 방향성만 참고하세요. 대본 내용, 문장, 구성은 절대 복제하지 마세요. 100% 독창적인 새로운 대본을 작성해야 합니다. 유튜브 저작권 정책을 준수하세요.)` : ""}
 ${commentAnalysis ? `\n📊 시청자 댓글 분석 결과:\n${commentAnalysis}\n\n위 댓글 분석을 적극 반영하세요. 시청자들이 가장 관심 있어하는 포인트를 중심으로 대본을 구성하고, 댓글에서 나온 공감 포인트나 궁금증을 대본에 녹여내세요. 이렇게 하면 시청자 반응이 좋은 영상이 됩니다.\n` : ""}
 ${sectionCount}개 섹션으로 구성된 ${isShorts ? "유튜브 쇼츠(세로형 60초)" : "유튜브 롱폼 영상"} 대본을 작성하세요.
@@ -1123,6 +1218,14 @@ export async function generateVideo(
       }
     }
 
+    await updateProgress(projectId, 3, "최신 뉴스 검색 중...");
+    let latestNewsContext = "";
+    try {
+      latestNewsContext = await searchLatestNews(project.topic, openaiKey, openaiBaseUrl);
+    } catch (e) {
+      console.warn("최신 뉴스 검색 실패, 건너뜀:", e);
+    }
+
     await updateProgress(projectId, 5, "AI 대본 생성 중...");
     const script = await generateScript(
       project.topic,
@@ -1135,6 +1238,7 @@ export async function generateVideo(
       openaiBaseUrl,
       commentAnalysis,
       referenceStyleDesc,
+      latestNewsContext,
     );
 
     await db.update(projects).set({
