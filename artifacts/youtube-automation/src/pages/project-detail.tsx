@@ -272,7 +272,7 @@ export default function ProjectDetail() {
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">분량</span>
-              <span>{{ "1min": "약 1분", "5min": "약 5분", "10min": "약 10분", "15min": "약 15분" }[project.duration] || project.duration}</span>
+              <span>{project.videoType === "shorts" ? "약 30~60초" : ({ "1min": "약 1분", "5min": "약 5분", "10min": "약 10분", "15min": "약 15분" }[project.duration] || project.duration)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">톤</span>

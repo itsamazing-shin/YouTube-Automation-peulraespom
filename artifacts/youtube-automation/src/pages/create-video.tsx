@@ -19,6 +19,17 @@ export default function CreateVideo() {
   const [visualStyle, setVisualStyle] = useState("cinematic");
   const [duration, setDuration] = useState("10min");
   const [tone, setTone] = useState("calm");
+
+  const handleVideoTypeChange = (type: string) => {
+    setVideoType(type);
+    if (type === "shorts") {
+      setDuration("1min");
+    } else {
+      if (duration === "1min") {
+        setDuration("10min");
+      }
+    }
+  };
   const [referenceUrl, setReferenceUrl] = useState("");
 
   const createMutation = useMutation({
@@ -77,12 +88,12 @@ export default function CreateVideo() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>영상 타입</Label>
-              <Select value={videoType} onValueChange={setVideoType}>
+              <Select value={videoType} onValueChange={handleVideoTypeChange}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="longform">롱폼 (10~15분)</SelectItem>
+                  <SelectItem value="longform">롱폼 (5~15분)</SelectItem>
                   <SelectItem value="shorts">쇼츠 (30~60초)</SelectItem>
                 </SelectContent>
               </Select>
@@ -112,10 +123,16 @@ export default function CreateVideo() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1min">약 1분 (테스트)</SelectItem>
-                  <SelectItem value="5min">약 5분</SelectItem>
-                  <SelectItem value="10min">약 10분</SelectItem>
-                  <SelectItem value="15min">약 15분</SelectItem>
+                  {videoType === "shorts" ? (
+                    <SelectItem value="1min">약 30~60초</SelectItem>
+                  ) : (
+                    <>
+                      <SelectItem value="1min">약 1분 (테스트)</SelectItem>
+                      <SelectItem value="5min">약 5분</SelectItem>
+                      <SelectItem value="10min">약 10분</SelectItem>
+                      <SelectItem value="15min">약 15분</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
             </div>
