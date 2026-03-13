@@ -79,7 +79,7 @@ async function generateScript(
 
   const styleMap: Record<string, string> = {
     cinematic: "Cinematic photorealistic scene. Dramatic film lighting, professional composition, shallow depth of field.",
-    "simple-character": "Korean 'Jollaman' (졸라맨) stick figure style illustration. Simple round head with dot eyes, thin stick body and limbs. Clean colored background (not white). Comic/manhwa speech bubbles with bold Korean text. Exaggerated emotional expressions through simple body language. Similar to Korean YouTube channel '이상한경제' or '침착맨' animation style. Include scene-relevant props drawn in same minimalist style.",
+    "simple-character": "Simple cartoon character illustration in the style of Korean YouTube channels like '이상한경제'. Characters have: perfectly round white/light circle head, very simple dot eyes and small line mouth, NO nose, minimal facial features but EXTREMELY exaggerated emotional expressions (crying rivers of tears, steam coming from ears when angry, sparkling eyes when excited, jaw dropping in shock). Body is simple but wearing recognizable clothes (suits, casual wear). Characters interact with oversized props related to the scene (giant money bags, huge documents, oversized coins, large arrows pointing up/down). Background should be a relevant scene setting (city street, office, home). The overall style is cute, humorous, and immediately conveys the emotion of the scene. Similar to 졸라맨/이상한경제 art style. Bold thick outlines, flat colors, clean vector-like quality.",
     infographic: "Clean modern infographic style. Data charts, graphs, icons, flat design, bold typography, organized layout with clear visual hierarchy.",
     webtoon: "Korean webtoon illustration style. Vibrant saturated colors, expressive characters, dynamic poses, manhwa-inspired art with clean lines.",
   };
@@ -102,7 +102,7 @@ JSON 형식:
   "sections": [
     {
       "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
-      "imagePrompt": "English-only image prompt for this scene. IMPORTANT: Do NOT include any Korean text, letters, signs, or writing in the image. No text overlay. Visual scene only. Style: ${styleMap[visualStyle] || styleMap.cinematic}",
+      "imagePrompt": "${visualStyle === "simple-character" ? "Image prompt for this scene. You MAY include short Korean text labels on props or speech bubbles if it helps convey the message (e.g. text on a document, sign, or speech bubble). Keep text minimal (1-3 words max)." : "English-only image prompt for this scene. IMPORTANT: Do NOT include any Korean text, letters, signs, or writing in the image. No text overlay. Visual scene only."} Style: ${styleMap[visualStyle] || styleMap.cinematic}",
       "subtitleHighlight": "핵심 자막 (짧은 문구)",
       "duration": ${isShorts ? 15 : 30}
     }
@@ -224,6 +224,7 @@ async function generateImageGemini(
   }
 
   const aspectRatio = isVertical ? "9:16" : "16:9";
+  const enhancedPrompt = `Generate a high-quality illustration. ${prompt}. The image should be vivid, detailed, and suitable for a YouTube video frame at ${isVertical ? "1080x1920" : "1920x1080"} resolution.`;
 
   const response = await fetch(
     `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
@@ -231,7 +232,7 @@ async function generateImageGemini(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts: [{ text: enhancedPrompt }] }],
         generationConfig: {
           responseModalities: ["IMAGE", "TEXT"],
           imageGenerationConfig: {
