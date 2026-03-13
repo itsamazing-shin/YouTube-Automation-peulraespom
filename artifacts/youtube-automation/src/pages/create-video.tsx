@@ -182,6 +182,7 @@ export default function CreateVideo() {
                   <SelectItem value="energetic">활기차고 열정적인</SelectItem>
                   <SelectItem value="serious">진지하고 전문적인</SelectItem>
                   <SelectItem value="friendly">친근하고 편안한</SelectItem>
+                  <SelectItem value="crisis">충격/위기감 (후킹 강화)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
