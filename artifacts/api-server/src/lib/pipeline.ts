@@ -250,6 +250,13 @@ ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시
   * "트럼프의 소름\n돋는 실체"
 - 핵심: 위기감, 충격, 긴박감, 궁금증을 자극하는 단어 사용. "폭락", "붕괴", "충격", "미친", "실체", "최후", "끝났다" 등
 
+🖼️ 썸네일 이미지 프롬프트 핵심 규칙:
+- thumbnailPrompt는 영상 주제를 직접적으로 보여주는 구체적 장면을 영어로 작성
+- 주제와 관련 없는 일반적인 사람 얼굴이나 표정만으로 구성하지 말 것
+- 예시: "호르무즈 해협 봉쇄" → 해협을 막는 군함과 불타는 유조선 장면, "중국 경제 붕괴" → 무너지는 중국 도시 건물과 하락 화살표
+- 주제의 핵심 키워드를 시각적 요소로 변환하여 보는 사람이 즉시 무슨 주제인지 알 수 있어야 함
+- 텍스트/글자는 절대 포함하지 말 것 — 텍스트는 나중에 별도로 오버레이됨
+
 매번 완전히 새로운 시각과 독창적인 구성으로 대본을 작성하세요. 같은 주제라도 이전과 다른 앵글, 다른 예시, 다른 스토리라인으로 접근하세요. 뻔한 서론 대신 의외의 사실이나 충격적인 통계로 시작하세요.
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`;
 
@@ -281,7 +288,7 @@ JSON 형식:
       "duration": ${isShorts ? 15 : 30}
     }
   ],
-  "thumbnailPrompt": "YouTube thumbnail, ultra eye-catching. Requirements: 1) dramatic facial expression or shocking visual related to the topic, 2) DO NOT include any text or letters in the image — leave clean space on the left side for text overlay to be added later, 3) high contrast saturated colors with red/yellow accent, 4) clean composition with subject on the right side leaving the left 40% empty for text, 5) slight zoom-in effect for urgency. Style: MrBeast/Korean top YouTuber thumbnail quality. CRITICAL: absolutely NO text, NO letters, NO words in the image."
+  "thumbnailPrompt": "이 필드에 영상 주제에 딱 맞는 구체적인 썸네일 이미지 프롬프트를 영어로 작성하세요. 반드시 지켜야 할 규칙: 1) 영상 주제의 핵심 내용을 시각적으로 보여주는 구체적 장면을 묘사 (예: 호르무즈 해협 봉쇄 → 해협을 막고 있는 전함과 불타는 유조선, 중국 경제 붕괴 → 무너지는 중국 도시 스카이라인과 하락하는 그래프를 형상화한 배경). 2) 단순히 사람 얼굴만 넣지 말 것 — 주제를 상징하는 배경/소품/상황이 반드시 포함되어야 함. 3) 텍스트/글자/문자 절대 포함하지 말 것. 4) 고대비 채도 높은 색상, 빨강/노랑/주황 강조. 5) 구도: 주요 피사체를 오른쪽에, 왼쪽 40%는 텍스트 오버레이 공간으로 비워둘 것. 6) 긴박감 있는 줌인 효과. Style: MrBeast/한국 탑 유튜버 썸네일 퀄리티."
 }`;
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
