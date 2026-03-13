@@ -646,42 +646,62 @@ async function overlayTextOnImage(
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
+  const imgW = isVertical ? 1080 : 1024;
+  const imgH = isVertical ? 1920 : 1024;
+
   const { mainLines, subText } = splitThumbnailText(text);
-  const mainFontSize = isVertical ? 100 : 120;
-  const subFontSize = isVertical ? 40 : 48;
-  const lineHeight = mainFontSize * 1.15;
+
+  const maxTextHeight = imgH * 0.45;
+  const lineSpacing = 1.15;
+  let mainFontSize = isVertical ? 90 : 80;
+  let totalNeeded = mainLines.length * mainFontSize * lineSpacing;
+  while (totalNeeded > maxTextHeight && mainFontSize > 40) {
+    mainFontSize -= 4;
+    totalNeeded = mainLines.length * mainFontSize * lineSpacing;
+  }
+
+  const longestLine = Math.max(...mainLines.map(l => l.length));
+  const maxFontForWidth = Math.floor((imgW * 0.9) / (longestLine * 0.6));
+  mainFontSize = Math.min(mainFontSize, maxFontForWidth);
+
+  const subFontSize = Math.round(mainFontSize * 0.4);
+  const lineHeight = Math.round(mainFontSize * lineSpacing);
   const totalMainHeight = mainLines.length * lineHeight;
-  const bottomMargin = isVertical ? 120 : 80;
-  const mainStartY = `(h - ${totalMainHeight + bottomMargin})`;
+  const bottomMargin = Math.round(imgH * 0.05);
+  const mainStartY = imgH - totalMainHeight - bottomMargin;
+
+  const gradientStart = Math.max(0, mainStartY - (subText ? subFontSize + 30 : 20));
+  const gradientRatio = (gradientStart / imgH).toFixed(2);
 
   const colors = ["#FFFF00", "#FFFFFF", "#FF4444", "#FFFF00"];
+  const borderW = Math.max(4, Math.round(mainFontSize * 0.07));
 
-  let filterComplex = `[0:v]drawbox=y=ih*0.45:width=iw:height=ih*0.55:color=black@0.55:t=fill[bg];[bg]`;
+  let filterComplex = `[0:v]drawbox=y=ih*${gradientRatio}:width=iw:height=ih*(1-${gradientRatio}):color=black@0.5:t=fill[bg];[bg]`;
 
   if (subText) {
     const safeSubText = sanitizeForFFmpeg(subText);
+    const subY = mainStartY - subFontSize - 15;
     filterComplex +=
       `drawtext=text='${safeSubText}':fontfile='${safeFontPath}':fontsize=${subFontSize}` +
-      `:fontcolor=white:borderw=3:bordercolor=black@0.9` +
+      `:fontcolor=white:borderw=2:bordercolor=black@0.9` +
       `:shadowcolor=black@0.7:shadowx=2:shadowy=2` +
-      `:x=(w-text_w)/2:y=${mainStartY}-${subFontSize + 20},`;
+      `:x=(w-text_w)/2:y=${Math.max(10, subY)},`;
   }
 
   for (let i = 0; i < mainLines.length; i++) {
     const safeText = sanitizeForFFmpeg(mainLines[i]);
-    const yExpr = `${mainStartY} + ${i * lineHeight}`;
+    const yPos = mainStartY + (i * lineHeight);
     const color = colors[i % colors.length];
-    const borderW = 8;
 
     filterComplex +=
       `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${mainFontSize}` +
-      `:fontcolor=black:x=(w-text_w)/2+3:y=${yExpr}+3,`;
+      `:fontcolor=black:x=(w-text_w)/2+2:y=${yPos}+2,`;
 
     filterComplex +=
       `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${mainFontSize}` +
       `:fontcolor=${color}:borderw=${borderW}:bordercolor=black` +
-      `:shadowcolor=black@0.9:shadowx=4:shadowy=4` +
-      `:x=(w-text_w)/2:y=${yExpr}`;
+      `:shadowcolor=black@0.9:shadowx=3:shadowy=3` +
+      `:x=(w-text_w)/2:y=${yPos}`;
 
     if (i < mainLines.length - 1) filterComplex += ",";
   }
@@ -711,7 +731,7 @@ function splitThumbnailText(text: string): { mainLines: string[]; subText: strin
     }
   }
 
-  const maxChars = 10;
+  const maxChars = 12;
   const lines: string[] = [];
   let remaining = mainText;
 
