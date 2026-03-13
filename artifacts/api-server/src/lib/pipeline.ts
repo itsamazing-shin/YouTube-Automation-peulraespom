@@ -262,8 +262,9 @@ async function composeSectionVideo(
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
   const frames = Math.ceil(totalDur * 30);
-  const fontSize = isVertical ? 44 : 32;
-  const shadowSize = isVertical ? 5 : 4;
+  const fontSize = isVertical ? 56 : 46;
+  const boxPadding = isVertical ? 16 : 12;
+  const subtitleY = isVertical ? "h-h/5" : "h-h/6";
 
   const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
@@ -280,7 +281,11 @@ async function composeSectionVideo(
     const startT = sub.start.toFixed(3);
     const endT = sub.end.toFixed(3);
     filterComplex +=
-      `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}:fontcolor=white:borderw=${shadowSize}:bordercolor=black:x=(w-text_w)/2:y=h-h/6:enable='between(t\\,${startT}\\,${endT})'`;
+      `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+      `:fontcolor=white:borderw=2:bordercolor=black` +
+      `:box=1:boxcolor=black@0.6:boxborderw=${boxPadding}` +
+      `:x=(w-text_w)/2:y=${subtitleY}` +
+      `:enable='between(t\\,${startT}\\,${endT})'`;
   }
 
   filterComplex += "[vout]";
