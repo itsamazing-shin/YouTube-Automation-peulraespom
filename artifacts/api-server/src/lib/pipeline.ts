@@ -22,7 +22,8 @@ export async function regenerateThumbnail(
   if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-  const title = project?.title || "";
+  const scriptData = project?.scriptJson as any;
+  const thumbnailText = scriptData?.thumbnailText || project?.title || "";
 
   const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
   const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
@@ -32,7 +33,7 @@ export async function regenerateThumbnail(
 
   if (fs.existsSync(thumbRawPath)) {
     try {
-      await overlayTextOnImage(thumbRawPath, thumbPath, title, false);
+      await overlayTextOnImage(thumbRawPath, thumbPath, thumbnailText, false);
     } catch (e) {
       console.warn("Text overlay failed, using raw image:", e);
       fs.copyFileSync(thumbRawPath, thumbPath);
@@ -194,6 +195,7 @@ interface ScriptSection {
 
 interface VideoScript {
   title: string;
+  thumbnailText: string;
   sections: ScriptSection[];
   thumbnailPrompt: string;
 }
@@ -229,8 +231,20 @@ async function generateScript(
     webtoon: "Korean webtoon illustration style. Vibrant saturated colors, expressive characters, dynamic poses, manhwa-inspired art with clean lines.",
   };
 
-  const systemPrompt = `당신은 창의적인 유튜브 영상 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
-${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시작하세요. 짧고 임팩트 있는 문장을 사용하고, 긴박감과 호기심을 유발하세요. '이거 모르면 손해입니다', '충격적인 사실' 같은 표현을 적극 활용하세요." : ""}
+  const systemPrompt = `당신은 한국 유튜브 조회수 폭발 전문 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
+${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시작하세요. 짧고 임팩트 있는 문장을 사용하고, 긴박감과 호기심을 유발하세요." : ""}
+
+🔥 제목 & 썸네일 텍스트 작성 핵심 규칙:
+- title: 유튜브 검색/추천에 노출될 전체 제목 (20~40자). 큰따옴표로 핵심 문구를 감싸서 강조. 예: "중국 경제 완전 붕괴" 14억 대륙의 충격적 최후
+- thumbnailText: 썸네일 이미지 위에 표시될 짧고 강렬한 후킹 문구 (최대 15~20자). 클릭을 유도하는 충격적이고 자극적인 짧은 문구. 예시:
+  * "중국 경제 폭락"
+  * "일본 국채 위기"  
+  * "천궁-II 96% 요격"
+  * "그들의 시대는 끝났다"
+  * "14억 대륙 파멸의 최후"
+  * "트럼프의 소름 돋는 실체"
+- 핵심: 위기감, 충격, 긴박감, 궁금증을 자극하는 단어 사용. "폭락", "붕괴", "충격", "미친", "실체", "최후", "끝났다" 등
+
 매번 완전히 새로운 시각과 독창적인 구성으로 대본을 작성하세요. 같은 주제라도 이전과 다른 앵글, 다른 예시, 다른 스토리라인으로 접근하세요. 뻔한 서론 대신 의외의 사실이나 충격적인 통계로 시작하세요.
 반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`;
 
@@ -244,7 +258,8 @@ ${referenceStyleDesc ? `\n🎨 참조 이미지 스타일 분석 결과:\n${refe
 
 JSON 형식:
 {
-  "title": "영상 제목",
+  "title": "유튜브 검색/추천용 전체 제목 (20~40자, 큰따옴표로 핵심 강조)",
+  "thumbnailText": "썸네일 후킹 문구 (15~20자 이내, 극도로 짧고 강렬하게. 예: 중국 경제 완전 붕괴, 일본의 충격적 최후)",
   "sections": [
     {
       "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
@@ -910,7 +925,7 @@ export async function generateVideo(
     try {
       const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
       await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
-      await overlayTextOnImage(thumbRawPath, thumbPath, script.title, false);
+      await overlayTextOnImage(thumbRawPath, thumbPath, script.thumbnailText || script.title, false);
     } catch (e) {
       console.warn("Thumbnail generation failed, skipping:", e);
     }
