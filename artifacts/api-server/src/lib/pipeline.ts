@@ -750,6 +750,19 @@ async function extractPexelsKeyword(
   }
 }
 
+function subtitlesToSRT(subtitles: Array<{ text: string; start: number; end: number }>): string {
+  return subtitles.map((sub, i) => {
+    const fmt = (t: number) => {
+      const h = Math.floor(t / 3600);
+      const m = Math.floor((t % 3600) / 60);
+      const s = Math.floor(t % 60);
+      const ms = Math.round((t % 1) * 1000);
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`;
+    };
+    return `${i + 1}\n${fmt(sub.start)} --> ${fmt(sub.end)}\n${sub.text}\n`;
+  }).join("\n");
+}
+
 async function composeMultiImageSectionVideo(
   imagePaths: string[],
   audioPath: string,
@@ -767,20 +780,18 @@ async function composeMultiImageSectionVideo(
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
-  const fontSize = isVertical ? 72 : 62;
-  const boxPadding = isVertical ? 20 : 16;
-  const subtitleY = isVertical ? "h-h/5" : "h-h/6";
-  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
-  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+  const imgCount = imagePaths.length;
+  const clipDur = totalDur / imgCount;
 
   const subtitles = whisperSegments && whisperSegments.length > 0
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
     : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
 
+  const srtPath = outputPath.replace(".mp4", ".srt");
+  fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
+
   const hasLogo = logoPath && fs.existsSync(logoPath);
   const logoSize = isVertical ? 160 : 200;
-  const imgCount = imagePaths.length;
-  const clipDur = totalDur / imgCount;
 
   const inputs: string[] = ["-y"];
   for (const img of imagePaths) {
@@ -804,31 +815,14 @@ async function composeMultiImageSectionVideo(
   const concatInputs = imagePaths.map((_, i) => `[clip${i}]`).join("");
   filterParts.push(`${concatInputs}concat=n=${imgCount}:v=1:a=0[merged]`);
 
-  let lastLabel = "[merged]";
+  let lastLabel = "merged";
   if (hasLogo) {
     filterParts.push(`[${logoIdx}:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo]`);
-    filterParts.push(`${lastLabel}[logo]overlay=15:15[withlogo]`);
-    lastLabel = "[withlogo]";
+    filterParts.push(`[${lastLabel}][logo]overlay=15:15[withlogo]`);
+    lastLabel = "withlogo";
   }
 
-  let subtitleFilter = "";
-  for (const sub of subtitles) {
-    const safeText = sanitizeForFFmpeg(sub.text);
-    const startT = sub.start.toFixed(3);
-    const endT = sub.end.toFixed(3);
-    subtitleFilter +=
-      `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=white:borderw=3:bordercolor=black` +
-      `:box=1:boxcolor=black@0.6:boxborderw=${boxPadding}` +
-      `:x=(w-text_w)/2:y=${subtitleY}` +
-      `:enable='between(t\\,${startT}\\,${endT})'`;
-  }
-
-  if (subtitleFilter) {
-    filterParts.push(`${lastLabel}${subtitleFilter.slice(1)}[vout]`);
-  } else {
-    filterParts.push(`${lastLabel}copy[vout]`);
-  }
+  filterParts.push(`[${lastLabel}]copy[vout]`);
 
   const filterComplex = filterParts.join(";");
 
@@ -844,6 +838,8 @@ async function composeMultiImageSectionVideo(
     "-threads", "2",
     outputPath,
   ], 300000);
+
+  try { fs.unlinkSync(srtPath); } catch {}
 }
 
 function sanitizeForFFmpeg(text: string): string {
@@ -964,42 +960,16 @@ async function composeSectionVideo(
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
-  const fontSize = isVertical ? 72 : 62;
-  const boxPadding = isVertical ? 20 : 16;
-  const subtitleY = isVertical ? "h-h/5" : "h-h/6";
-
-  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
-  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
 
   const subtitles = whisperSegments && whisperSegments.length > 0
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
     : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
 
+  const srtPath = outputPath.replace(".mp4", ".srt");
+  fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
+
   const hasLogo = logoPath && fs.existsSync(logoPath);
   const logoSize = isVertical ? 160 : 200;
-
-  let filterComplex =
-    `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
-    `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-    `setsar=1,format=yuv420p`;
-
-  if (hasLogo) {
-    filterComplex += `[scene];[2:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo];[scene][logo]overlay=15:15`;
-  }
-
-  for (const sub of subtitles) {
-    const safeText = sanitizeForFFmpeg(sub.text);
-    const startT = sub.start.toFixed(3);
-    const endT = sub.end.toFixed(3);
-    filterComplex +=
-      `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-      `:fontcolor=white:borderw=3:bordercolor=black` +
-      `:box=1:boxcolor=black@0.6:boxborderw=${boxPadding}` +
-      `:x=(w-text_w)/2:y=${subtitleY}` +
-      `:enable='between(t\\,${startT}\\,${endT})'`;
-  }
-
-  filterComplex += "[vout]";
 
   const inputs = [
     "-y",
@@ -1008,6 +978,21 @@ async function composeSectionVideo(
   ];
   if (hasLogo) {
     inputs.push("-i", logoPath!);
+  }
+
+  let filterComplex: string;
+  if (hasLogo) {
+    filterComplex =
+      `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
+      `setsar=1,format=yuv420p[scene];` +
+      `[2:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo];` +
+      `[scene][logo]overlay=15:15[vout]`;
+  } else {
+    filterComplex =
+      `[0:v]scale=${width}:${height}:force_original_aspect_ratio=decrease,` +
+      `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
+      `setsar=1,format=yuv420p[vout]`;
   }
 
   await runFFmpeg([
@@ -1022,6 +1007,8 @@ async function composeSectionVideo(
     "-threads", "2",
     outputPath,
   ], 300000);
+
+  try { fs.unlinkSync(srtPath); } catch {}
 }
 
 async function overlayTextOnImage(
