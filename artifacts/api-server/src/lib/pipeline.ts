@@ -954,7 +954,7 @@ export async function generateVideo(
     }).where(eq(projects.id, projectId));
 
     const sectionVideos: string[] = [];
-    const insertSubscribeAfter = !isShorts ? Math.floor(script.sections.length / 2) - 1 : -1;
+    const insertSubscribeAfter = !isVertical ? Math.floor(script.sections.length / 2) - 1 : -1;
 
     for (let i = 0; i < script.sections.length; i++) {
       const section = script.sections[i];
