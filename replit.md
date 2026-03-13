@@ -71,3 +71,9 @@ artifacts-monorepo/
 - **Korean UI**: All interface text in Korean
 - **Supported formats**: Long-form (1920x1080) and Shorts (1080x1920)
 - **Visual styles**: Cinematic, Simple Character (stickman), Infographic, Webtoon
+- **Korean subtitles**: Uses NotoSansCJKkr-Bold.otf font (assets/fonts/) via FFmpeg drawtext fontfile parameter
+- **Ken Burns**: Gentle zoom (0.0003/frame, max 1.12x) with 1.15x pre-scale for smooth motion
+- **Vite proxy**: Frontend proxies /api/* requests to API server (port 8080) for video/file serving
+- **Section counts**: 1min=4, 5min=8, 10min=12, 15min=16 sections (Shorts=3)
+- **Narration**: Each section 3-5 sentences, 80-150+ characters for rich content
+- **Grok/xAI**: Optional (requires XAI_API_KEY with credits), falls back to gpt-image-1

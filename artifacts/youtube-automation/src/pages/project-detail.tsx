@@ -169,8 +169,10 @@ export default function ProjectDetail() {
           <CardContent>
             <video
               controls
+              preload="metadata"
               className="w-full rounded-lg bg-black"
               src={`${API_BASE}${project.videoUrl}`}
+              {...(project.thumbnailUrl ? { poster: `${API_BASE}${project.thumbnailUrl}` } : {})}
             />
             <div className="flex gap-3 mt-4">
               <a href={`${API_BASE}${project.videoUrl}`} download className="flex-1">

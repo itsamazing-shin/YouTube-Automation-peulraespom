@@ -45,7 +45,7 @@ async function generateScript(
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
-  const sectionCount = isShorts ? 3 : duration === "1min" ? 2 : duration === "5min" ? 6 : duration === "10min" ? 10 : 14;
+  const sectionCount = isShorts ? 3 : duration === "1min" ? 4 : duration === "5min" ? 8 : duration === "10min" ? 12 : 16;
 
   const toneMap: Record<string, string> = {
     calm: "차분하고 설득력 있는 톤으로, 시청자가 깊이 생각하게 만드는",
@@ -76,13 +76,13 @@ JSON 형식:
   "title": "영상 제목",
   "sections": [
     {
-      "narration": "나레이션 텍스트 (2~4문장)",
+      "narration": "나레이션 텍스트 (반드시 3~5문장, 각 문장이 구체적이고 내용이 풍부하게. 총 80~150자 이상)",
       "imagePrompt": "English image prompt for this scene. ${styleMap[visualStyle] || styleMap.cinematic}",
       "subtitleHighlight": "핵심 자막 (짧은 문구)",
       "duration": ${isShorts ? 15 : 30}
     }
   ],
-  "thumbnailPrompt": "English thumbnail image prompt, bold text overlay, eye-catching"
+  "thumbnailPrompt": "YouTube thumbnail, ultra eye-catching. Requirements: 1) dramatic facial expression or shocking visual related to the topic, 2) bold large Korean title text (max 5 words) with yellow/white outline and drop shadow, 3) high contrast saturated colors with red/yellow accent, 4) clean composition with subject on one side leaving space for text, 5) slight zoom-in effect for urgency. Style: MrBeast/Korean top YouTuber thumbnail quality."
 }`;
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -148,6 +148,7 @@ async function generateImage(
   apiKey: string,
   isVertical: boolean,
   baseUrl: string = "https://api.openai.com/v1",
+  quality: "low" | "medium" | "high" = "low",
 ): Promise<void> {
   const response = await fetch(`${baseUrl}/images/generations`, {
     method: "POST",
@@ -160,7 +161,7 @@ async function generateImage(
       prompt,
       n: 1,
       size: isVertical ? "1024x1536" : "1536x1024",
-      quality: "low",
+      quality,
     }),
   });
 
@@ -206,26 +207,83 @@ function sanitizeForFFmpeg(text: string): string {
     .replace(/\r/g, "");
 }
 
+function splitNarrationToSubtitles(narration: string, totalDuration: number): Array<{ text: string; start: number; end: number }> {
+  const sentences = narration
+    .replace(/([.!?。！？])\s*/g, "$1\n")
+    .split("\n")
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  if (sentences.length === 0) return [{ text: narration, start: 0, end: totalDuration }];
+
+  const totalChars = sentences.reduce((sum, s) => sum + s.length, 0);
+  const subtitles: Array<{ text: string; start: number; end: number }> = [];
+  let currentTime = 0;
+
+  for (let i = 0; i < sentences.length; i++) {
+    const proportion = sentences[i].length / totalChars;
+    const duration = proportion * totalDuration;
+    const chunks: string[] = [];
+    const sentence = sentences[i];
+
+    if (sentence.length > 25) {
+      const mid = sentence.lastIndexOf(" ", Math.floor(sentence.length / 2));
+      const commaPos = sentence.indexOf(",");
+      const splitPos = commaPos > 5 && commaPos < sentence.length - 5 ? commaPos + 1 : mid > 5 ? mid : Math.floor(sentence.length / 2);
+      chunks.push(sentence.slice(0, splitPos).trim());
+      chunks.push(sentence.slice(splitPos).trim());
+    } else {
+      chunks.push(sentence);
+    }
+
+    const chunkDur = duration / chunks.length;
+    for (const chunk of chunks) {
+      subtitles.push({
+        text: chunk,
+        start: currentTime,
+        end: currentTime + chunkDur,
+      });
+      currentTime += chunkDur;
+    }
+  }
+
+  return subtitles;
+}
+
 async function composeSectionVideo(
   imagePath: string,
   audioPath: string,
   outputPath: string,
   audioDuration: number,
   isVertical: boolean,
-  subtitleText: string,
+  narrationText: string,
 ): Promise<void> {
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
   const frames = Math.ceil(totalDur * 30);
-  const fontSize = isVertical ? 48 : 36;
-  const safeSubtitle = sanitizeForFFmpeg(subtitleText);
+  const fontSize = isVertical ? 44 : 32;
+  const shadowSize = isVertical ? 5 : 4;
 
-  const filterComplex =
-    `[0:v]scale=${Math.round(width * 1.3)}:${Math.round(height * 1.3)},` +
-    `zoompan=z='min(zoom+0.0008,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
-    `setsar=1,format=yuv420p,` +
-    `drawtext=text='${safeSubtitle}':fontsize=${fontSize}:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-h/6[vout]`;
+  const fontPath = path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf");
+  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+
+  const subtitles = splitNarrationToSubtitles(narrationText, audioDuration);
+
+  let filterComplex =
+    `[0:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
+    `zoompan=z='min(zoom+0.0003,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
+    `setsar=1,format=yuv420p`;
+
+  for (const sub of subtitles) {
+    const safeText = sanitizeForFFmpeg(sub.text);
+    const startT = sub.start.toFixed(3);
+    const endT = sub.end.toFixed(3);
+    filterComplex +=
+      `,drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}:fontcolor=white:borderw=${shadowSize}:bordercolor=black:x=(w-text_w)/2:y=h-h/6:enable='between(t\\,${startT}\\,${endT})'`;
+  }
+
+  filterComplex += "[vout]";
 
   await execFileAsync("ffmpeg", [
     "-y",
@@ -314,7 +372,7 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
-      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.subtitleHighlight);
+      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration);
 
       sectionVideos.push(sectionPath);
     }
@@ -326,7 +384,7 @@ export async function generateVideo(
     await updateProgress(projectId, 95, "썸네일 생성 중...");
     const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
     try {
-      await generateImage(script.thumbnailPrompt, thumbPath, openaiKey, false, openaiBaseUrl);
+      await generateImage(script.thumbnailPrompt, thumbPath, openaiKey, false, openaiBaseUrl, "medium");
     } catch (e) {
       console.warn("Thumbnail generation failed, skipping:", e);
     }
