@@ -421,19 +421,13 @@ async function generateScript(
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
-  const sectionCount = isShorts ? 3 : duration === "1min" ? 4 : duration === "5min" ? 8 : duration === "10min" ? 12 : 16;
+  const sectionCount = isShorts ? 3 : duration === "1min" ? 8 : duration === "5min" ? 20 : duration === "10min" ? 30 : 40;
 
   const narrationGuide = isShorts
     ? "반드시 2~3문장, 총 50~80자. 짧고 임팩트 있게."
-    : duration === "1min"
-    ? "반드시 3~5문장, 총 80~150자."
-    : duration === "5min"
-    ? "반드시 6~10문장, 총 200~350자. 구체적 사례와 수치를 포함하여 풍부하게 서술."
-    : duration === "10min"
-    ? "반드시 10~15문장, 총 350~500자. 깊이 있는 분석과 구체적 사례, 배경 설명, 수치, 전문가 의견 등을 포함하여 매우 풍부하고 상세하게 서술. 하나의 소주제를 충분히 깊게 파고들어야 합니다."
-    : "반드시 10~15문장, 총 350~500자. 깊이 있는 분석과 구체적 사례, 배경 설명, 수치, 전문가 의견 등을 포함하여 매우 풍부하고 상세하게 서술. 하나의 소주제를 충분히 깊게 파고들어야 합니다.";
+    : "반드시 2~4문장, 총 40~80자. 하나의 핵심 포인트만 전달. 짧고 임팩트 있는 문장으로 시청자의 집중력을 유지.";
 
-  const targetDurationPerSection = isShorts ? 15 : duration === "1min" ? 15 : duration === "5min" ? 35 : duration === "10min" ? 50 : 55;
+  const targetDurationPerSection = isShorts ? 15 : duration === "1min" ? 8 : duration === "5min" ? 15 : duration === "10min" ? 20 : 22;
 
   const toneMap: Record<string, string> = {
     calm: "차분하고 설득력 있는 톤으로, 시청자가 깊이 생각하게 만드는",
@@ -1390,8 +1384,8 @@ export async function generateVideo(
 
     const sectionVideos: string[] = [];
     const insertSubscribeAfter = !isVertical ? Math.floor(script.sections.length / 2) - 1 : -1;
-    const usePexels = project.visualStyle === "cinematic" && !!settingsMap.PEXELS_API_KEY;
     const pexelsKey = settingsMap.PEXELS_API_KEY || process.env.PEXELS_API_KEY || "";
+    const usePexelsFirst = !!pexelsKey;
 
     for (let i = 0; i < script.sections.length; i++) {
       const section = script.sections[i];
@@ -1411,51 +1405,49 @@ export async function generateVideo(
         console.warn(`Whisper failed for section ${i}, using estimation:`, e);
       }
 
-      await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 생성 중...`);
+      await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 검색 중...`);
       const imagePath = path.join(projectDir, `image_${i}.png`);
-      try {
-        await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
-      } catch (imgErr: any) {
-        console.warn(`이미지 생성 실패 (섹션 ${i + 1}), 기본 이미지 사용:`, imgErr.message);
-        const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
-        if (createCanvas) {
-          const w = isVertical ? 1080 : 1920;
-          const h = isVertical ? 1920 : 1080;
-          const cvs = createCanvas(w, h);
-          const ctx = cvs.getContext("2d");
-          ctx.fillStyle = "#1a1a2e";
-          ctx.fillRect(0, 0, w, h);
-          ctx.fillStyle = "#e0e0e0";
-          ctx.font = `bold ${isVertical ? 48 : 64}px sans-serif`;
-          ctx.textAlign = "center";
-          ctx.fillText(`섹션 ${i + 1}`, w / 2, h / 2);
-          fs.writeFileSync(imagePath, cvs.toBuffer("image/png"));
-        } else {
-          const placeholderBuf = Buffer.alloc(100, 0);
-          fs.writeFileSync(imagePath, placeholderBuf);
-        }
-      }
+      let sectionImagePaths: string[] = [];
 
-      let sectionImagePaths = [imagePath];
-
-      if (usePexels && audioDuration > 20) {
-        await updateProgress(projectId, Math.round(pctBase + 15), `섹션 ${i + 1}/${script.sections.length}: 보조 이미지 검색 중...`);
+      if (usePexelsFirst) {
         try {
           const keyword = await extractPexelsKeyword(section.narration, openaiKey, openaiBaseUrl);
           if (keyword) {
-            const pexelsCount = audioDuration > 40 ? 2 : 1;
-            const pexelsImages = await fetchPexelsImages(keyword, pexelsCount, projectDir, `sec${i}`, pexelsKey, isVertical);
+            const pexelsImages = await fetchPexelsImages(keyword, 1, projectDir, `sec${i}`, pexelsKey, isVertical);
             if (pexelsImages.length > 0) {
-              const interleaved: string[] = [imagePath];
-              for (const pi of pexelsImages) {
-                interleaved.push(pi);
-              }
-              sectionImagePaths = interleaved;
-              console.log(`섹션 ${i + 1}: Pexels 보조 이미지 ${pexelsImages.length}장 추가 (키워드: ${keyword})`);
+              sectionImagePaths = pexelsImages;
+              console.log(`섹션 ${i + 1}: Pexels 이미지 사용 (키워드: ${keyword})`);
             }
           }
         } catch (e) {
-          console.warn(`Pexels fetch failed for section ${i}, using AI image only:`, e);
+          console.warn(`Pexels fetch failed for section ${i}:`, e);
+        }
+      }
+
+      if (sectionImagePaths.length === 0) {
+        try {
+          await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
+          sectionImagePaths = [imagePath];
+        } catch (imgErr: any) {
+          console.warn(`이미지 생성 실패 (섹션 ${i + 1}), 기본 이미지 사용:`, imgErr.message);
+          const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
+          if (createCanvas) {
+            const w = isVertical ? 1080 : 1920;
+            const h = isVertical ? 1920 : 1080;
+            const cvs = createCanvas(w, h);
+            const ctx = cvs.getContext("2d");
+            ctx.fillStyle = "#1a1a2e";
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = "#e0e0e0";
+            ctx.font = `bold ${isVertical ? 48 : 64}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText(`섹션 ${i + 1}`, w / 2, h / 2);
+            fs.writeFileSync(imagePath, cvs.toBuffer("image/png"));
+          } else {
+            const placeholderBuf = Buffer.alloc(100, 0);
+            fs.writeFileSync(imagePath, placeholderBuf);
+          }
+          sectionImagePaths = [imagePath];
         }
       }
 
