@@ -616,6 +616,7 @@ async function composeSectionVideo(
   isVertical: boolean,
   narrationText: string,
   whisperSegments?: WhisperSegment[],
+  logoPath?: string,
 ): Promise<void> {
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
@@ -632,10 +633,17 @@ async function composeSectionVideo(
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
     : splitNarrationToSubtitles(narrationText, audioDuration, isVertical);
 
+  const hasLogo = logoPath && fs.existsSync(logoPath);
+  const logoSize = isVertical ? 80 : 100;
+
   let filterComplex =
     `[0:v]scale=${Math.round(width * 1.15)}:${Math.round(height * 1.15)},` +
     `zoompan=z='min(zoom+0.0003,1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
     `setsar=1,format=yuv420p`;
+
+  if (hasLogo) {
+    filterComplex += `[scene];[2:v]scale=${logoSize}:${logoSize}:force_original_aspect_ratio=decrease,format=rgba[logo];[scene][logo]overlay=15:15`;
+  }
 
   for (const sub of subtitles) {
     const safeText = sanitizeForFFmpeg(sub.text);
@@ -651,10 +659,17 @@ async function composeSectionVideo(
 
   filterComplex += "[vout]";
 
-  await execFileAsync("ffmpeg", [
+  const inputs = [
     "-y",
     "-loop", "1", "-i", imagePath,
     "-i", audioPath,
+  ];
+  if (hasLogo) {
+    inputs.push("-i", logoPath!);
+  }
+
+  await execFileAsync("ffmpeg", [
+    ...inputs,
     "-filter_complex", filterComplex,
     "-map", "[vout]", "-map", "1:a",
     "-c:v", "libx264", "-preset", "fast", "-crf", "23",
@@ -816,6 +831,7 @@ async function createSubscribeSectionVideo(
   elevenlabsKey: string,
   openaiKey: string,
   openaiBaseUrl: string = "https://api.openai.com/v1",
+  logoPath?: string,
 ): Promise<string> {
   const subscribeImgPath = path.join(projectDir, "subscribe_img.png");
   const subscribeAudioPath = path.join(projectDir, "subscribe_audio.mp3");
@@ -833,6 +849,8 @@ async function createSubscribeSectionVideo(
     audioDuration,
     isVertical,
     SUBSCRIBE_NARRATION,
+    undefined,
+    logoPath,
   );
 
   return subscribeVideoPath;
@@ -871,6 +889,12 @@ export async function generateVideo(
   const openaiBaseUrl = settingsMap.OPENAI_BASE_URL || "https://api.openai.com/v1";
   const elevenlabsKey = settingsMap.ELEVENLABS_API_KEY;
   const isVertical = project.videoType === "shorts";
+
+  let videoLogoPath: string | undefined;
+  if (settingsMap.CHANNEL_LOGO) {
+    const lp = path.join(OUTPUT_DIR, settingsMap.CHANNEL_LOGO.replace("/files/", ""));
+    if (fs.existsSync(lp)) videoLogoPath = lp;
+  }
 
   try {
     let commentAnalysis = "";
@@ -972,14 +996,14 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
-      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments);
+      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
 
       sectionVideos.push(sectionPath);
 
       if (i === insertSubscribeAfter) {
         await updateProgress(projectId, Math.round(pctBase + 25), "구독 유도 섹션 생성 중...");
         try {
-          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl);
+          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl, videoLogoPath);
           sectionVideos.push(subscribeVideoPath);
           console.log("구독 유도 섹션 삽입 완료");
         } catch (subErr: any) {
