@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Video, Clock, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { Plus, Video, Clock, CheckCircle2, AlertCircle, Loader2, Trash2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = `${import.meta.env.BASE_URL}api`.replace(/\/+/g, '/');
 
@@ -26,6 +27,9 @@ const statusConfig: Record<string, { label: string; variant: "default" | "second
 };
 
 export default function Dashboard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["projects"],
     queryFn: async () => {
@@ -34,6 +38,20 @@ export default function Dashboard() {
       return res.json();
     },
     refetchInterval: 5000,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${API_BASE}/projects/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      toast({ title: "삭제 완료", description: "프로젝트가 삭제되었습니다." });
+    },
+    onError: () => {
+      toast({ title: "삭제 실패", variant: "destructive" });
+    },
   });
 
   return (
@@ -74,40 +92,55 @@ export default function Dashboard() {
           {projects.map((project) => {
             const status = statusConfig[project.status] || statusConfig.draft;
             return (
-              <Link key={project.id} href={`/project/${project.id}`}>
-                <Card className="cursor-pointer transition-all hover:shadow-md hover:border-primary/20">
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between mb-3">
-                      <Badge variant={status.variant} className="flex items-center gap-1">
-                        {status.icon}
-                        {status.label}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {project.videoType === "shorts" ? "쇼츠" : "롱폼"}
-                      </span>
-                    </div>
-                    <h3 className="font-semibold text-sm line-clamp-2 mb-1">{project.title}</h3>
-                    <p className="text-xs text-muted-foreground line-clamp-1">{project.topic}</p>
-                    {project.status === "generating" && (
-                      <div className="mt-3">
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="text-muted-foreground">{project.progressMessage || "처리중..."}</span>
-                          <span className="font-medium">{project.progress}%</span>
-                        </div>
-                        <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all duration-500"
-                            style={{ width: `${project.progress}%` }}
-                          />
-                        </div>
+              <div key={project.id} className="relative group">
+                <Link href={`/project/${project.id}`}>
+                  <Card className="cursor-pointer transition-all hover:shadow-md hover:border-primary/20">
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <Badge variant={status.variant} className="flex items-center gap-1">
+                          {status.icon}
+                          {status.label}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {project.videoType === "shorts" ? "쇼츠" : "롱폼"}
+                        </span>
                       </div>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-3">
-                      {new Date(project.createdAt).toLocaleDateString("ko-KR")}
-                    </p>
-                  </CardContent>
-                </Card>
-              </Link>
+                      <h3 className="font-semibold text-sm line-clamp-2 mb-1">{project.title}</h3>
+                      <p className="text-xs text-muted-foreground line-clamp-1">{project.topic}</p>
+                      {project.status === "generating" && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="text-muted-foreground">{project.progressMessage || "처리중..."}</span>
+                            <span className="font-medium">{project.progress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all duration-500"
+                              style={{ width: `${project.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-3">
+                        {new Date(project.createdAt).toLocaleDateString("ko-KR")}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (confirm("이 프로젝트를 삭제하시겠습니까?")) {
+                      deleteMutation.mutate(project.id);
+                    }
+                  }}
+                  className="absolute top-2 right-2 p-1.5 rounded-md bg-background/80 border border-border opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive hover:text-destructive-foreground hover:border-destructive"
+                  title="프로젝트 삭제"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             );
           })}
         </div>
