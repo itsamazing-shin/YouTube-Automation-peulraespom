@@ -82,8 +82,8 @@ export default function CreateVideo() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="longform">Long-form (10~15분)</SelectItem>
-                  <SelectItem value="shorts">Shorts (30~60초)</SelectItem>
+                  <SelectItem value="longform">롱폼 (10~15분)</SelectItem>
+                  <SelectItem value="shorts">쇼츠 (30~60초)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

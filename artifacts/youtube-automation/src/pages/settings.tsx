@@ -22,7 +22,7 @@ interface ApiKeyConfig {
 const API_KEYS: ApiKeyConfig[] = [
   {
     key: "OPENAI_API_KEY",
-    label: "OpenAI API Key",
+    label: "OpenAI API 키",
     description: "GPT 대본 생성 + gpt-image-1 이미지 생성",
     placeholder: "sk-...",
     required: true,
@@ -30,7 +30,7 @@ const API_KEYS: ApiKeyConfig[] = [
   },
   {
     key: "ELEVENLABS_API_KEY",
-    label: "ElevenLabs API Key",
+    label: "ElevenLabs API 키",
     description: "TTS 나레이션 음성 생성",
     placeholder: "sk_...",
     required: true,
@@ -38,7 +38,7 @@ const API_KEYS: ApiKeyConfig[] = [
   },
   {
     key: "XAI_API_KEY",
-    label: "xAI (Grok) API Key",
+    label: "xAI (Grok) API 키",
     description: "인트로 AI 영상 생성 (선택사항)",
     placeholder: "xai-...",
     required: false,
@@ -46,7 +46,7 @@ const API_KEYS: ApiKeyConfig[] = [
   },
   {
     key: "PEXELS_API_KEY",
-    label: "Pexels API Key",
+    label: "Pexels API 키",
     description: "무료 스톡 영상/이미지 검색",
     placeholder: "API Key",
     required: false,
@@ -115,7 +115,7 @@ export default function Settings() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight">설정</h1>
         <p className="text-muted-foreground mt-1">
           외부 API 키를 등록하세요. 각 서비스에서 직접 발급받은 키를 입력합니다.
         </p>

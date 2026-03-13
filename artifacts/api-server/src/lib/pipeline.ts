@@ -567,7 +567,28 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 생성 중...`);
       const imagePath = path.join(projectDir, `image_${i}.png`);
-      await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
+      try {
+        await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
+      } catch (imgErr: any) {
+        console.warn(`이미지 생성 실패 (섹션 ${i + 1}), 기본 이미지 사용:`, imgErr.message);
+        const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
+        if (createCanvas) {
+          const w = isVertical ? 1080 : 1920;
+          const h = isVertical ? 1920 : 1080;
+          const cvs = createCanvas(w, h);
+          const ctx = cvs.getContext("2d");
+          ctx.fillStyle = "#1a1a2e";
+          ctx.fillRect(0, 0, w, h);
+          ctx.fillStyle = "#e0e0e0";
+          ctx.font = `bold ${isVertical ? 48 : 64}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.fillText(`섹션 ${i + 1}`, w / 2, h / 2);
+          fs.writeFileSync(imagePath, cvs.toBuffer("image/png"));
+        } else {
+          const placeholderBuf = Buffer.alloc(100, 0);
+          fs.writeFileSync(imagePath, placeholderBuf);
+        }
+      }
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
@@ -604,9 +625,19 @@ export async function generateVideo(
 
   } catch (err: any) {
     console.error("Pipeline error:", err);
+    let koreanError = err.message || "영상 생성에 실패했습니다";
+    if (koreanError.includes("moderation_blocked") || koreanError.includes("safety system")) {
+      koreanError = "이미지 생성이 안전 정책에 의해 차단되었습니다. 다른 주제나 프롬프트로 다시 시도해주세요.";
+    } else if (koreanError.includes("rate limit") || koreanError.includes("429")) {
+      koreanError = "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.";
+    } else if (koreanError.includes("insufficient_quota") || koreanError.includes("billing")) {
+      koreanError = "API 크레딧이 부족합니다. 설정에서 API 키를 확인해주세요.";
+    } else if (koreanError.includes("Invalid API Key") || koreanError.includes("401")) {
+      koreanError = "API 키가 유효하지 않습니다. 설정에서 올바른 키를 입력해주세요.";
+    }
     await db.update(projects).set({
       status: "error",
-      errorMessage: err.message || "Video generation failed",
+      errorMessage: koreanError,
       updatedAt: new Date(),
     }).where(eq(projects.id, projectId));
   }

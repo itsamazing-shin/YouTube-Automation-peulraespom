@@ -40,7 +40,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight">대시보드</h1>
           <p className="text-muted-foreground mt-1">AI 영상 자동 생성 프로젝트를 관리하세요</p>
         </div>
         <Link href="/create">
@@ -83,7 +83,7 @@ export default function Dashboard() {
                         {status.label}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {project.videoType === "shorts" ? "Shorts" : "Long-form"}
+                        {project.videoType === "shorts" ? "쇼츠" : "롱폼"}
                       </span>
                     </div>
                     <h3 className="font-semibold text-sm line-clamp-2 mb-1">{project.title}</h3>

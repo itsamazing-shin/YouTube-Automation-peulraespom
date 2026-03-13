@@ -264,19 +264,19 @@ export default function ProjectDetail() {
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">타입</span>
-              <span>{project.videoType === "shorts" ? "Shorts" : "Long-form"}</span>
+              <span>{project.videoType === "shorts" ? "쇼츠" : "롱폼"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">스타일</span>
-              <span>{project.visualStyle}</span>
+              <span>{{ cinematic: "시네마틱", "simple-character": "심플 캐릭터", infographic: "인포그래픽", webtoon: "웹툰" }[project.visualStyle] || project.visualStyle}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">분량</span>
-              <span>{project.duration}</span>
+              <span>{{ "1min": "약 1분", "5min": "약 5분", "10min": "약 10분", "15min": "약 15분" }[project.duration] || project.duration}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">톤</span>
-              <span>{project.tone}</span>
+              <span>{{ calm: "차분한", energetic: "활기찬", serious: "진지한", friendly: "친근한" }[project.tone] || project.tone}</span>
             </div>
           </CardContent>
         </Card>
