@@ -821,19 +821,30 @@ async function composeMultiImageSectionVideo(
       scaledPath,
     ], 30000);
 
+    const oneFramePath = outputPath.replace(".mp4", `_1f${i}.mp4`);
+    await runFFmpeg([
+      "-y",
+      "-loop", "1", "-framerate", "5", "-t", "0.2",
+      "-i", scaledPath,
+      "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+      "-crf", "30", "-pix_fmt", "yuv420p",
+      "-frames:v", "1",
+      oneFramePath,
+    ], 30000);
+
     const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
     await runFFmpeg([
       "-y",
-      "-loop", "1", "-framerate", "5", "-i", scaledPath,
+      "-stream_loop", "-1", "-i", oneFramePath,
       "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo`,
-      "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-      "-crf", "30", "-r", "5", "-g", "50",
-      "-pix_fmt", "yuv420p",
+      "-c:v", "copy",
       "-c:a", "aac",
       "-t", clipDur.toFixed(3),
       "-shortest",
       clipPath,
-    ], 300000);
+    ], 60000);
+
+    try { fs.unlinkSync(oneFramePath); } catch {}
 
     clipPaths.push(clipPath);
     try { fs.unlinkSync(scaledPath); } catch {}
@@ -1005,22 +1016,34 @@ async function composeSectionVideo(
     scaledImgPath,
   ], 30000);
 
-  console.log(`[composeSectionVideo] 스케일 완료, 인코딩 시작`);
+  console.log(`[composeSectionVideo] 스케일 완료, 1프레임 인코딩 시작`);
+
+  const oneFramePath = outputPath.replace(".mp4", "_1f.mp4");
+  await runFFmpeg([
+    "-y",
+    "-loop", "1", "-framerate", "5", "-t", "0.2",
+    "-i", scaledImgPath,
+    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+    "-crf", "30", "-pix_fmt", "yuv420p",
+    "-frames:v", "1",
+    oneFramePath,
+  ], 30000);
+
+  console.log(`[composeSectionVideo] 1프레임 완료, 루프+오디오 합성`);
 
   await runFFmpeg([
     "-y",
-    "-loop", "1", "-framerate", "5", "-i", scaledImgPath,
+    "-stream_loop", "-1", "-i", oneFramePath,
     "-i", audioPath,
-    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-    "-crf", "30", "-r", "5", "-g", "50",
-    "-pix_fmt", "yuv420p",
+    "-c:v", "copy",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
     outputPath,
-  ], 600000);
+  ], 120000);
 
   try { fs.unlinkSync(scaledImgPath); } catch {}
+  try { fs.unlinkSync(oneFramePath); } catch {}
   try { fs.unlinkSync(srtPath); } catch {}
 }
 
