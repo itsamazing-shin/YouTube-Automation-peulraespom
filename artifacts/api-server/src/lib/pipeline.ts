@@ -1,0 +1,352 @@
+import { db } from "@workspace/db";
+import { projects } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
+import type { Project } from "@workspace/db/schema";
+import fs from "fs";
+import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+const OUTPUT_DIR = path.join(process.cwd(), "output");
+if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+async function updateProgress(projectId: number, progress: number, message: string) {
+  await db.update(projects).set({
+    progress,
+    progressMessage: message,
+    updatedAt: new Date(),
+  }).where(eq(projects.id, projectId));
+}
+
+interface ScriptSection {
+  narration: string;
+  imagePrompt: string;
+  subtitleHighlight: string;
+  duration: number;
+}
+
+interface VideoScript {
+  title: string;
+  sections: ScriptSection[];
+  thumbnailPrompt: string;
+}
+
+async function generateScript(
+  topic: string,
+  videoType: string,
+  duration: string,
+  tone: string,
+  visualStyle: string,
+  referenceUrl: string | null,
+  apiKey: string,
+): Promise<VideoScript> {
+  const isShorts = videoType === "shorts";
+
+  const sectionCount = isShorts ? 3 : duration === "1min" ? 2 : duration === "5min" ? 6 : duration === "10min" ? 10 : 14;
+
+  const toneMap: Record<string, string> = {
+    calm: "차분하고 설득력 있는 톤으로, 시청자가 깊이 생각하게 만드는",
+    energetic: "활기차고 열정적인 톤으로, 에너지 넘치는",
+    serious: "진지하고 전문적인 톤으로, 신뢰감을 주는",
+    friendly: "친근하고 편안한 톤으로, 친구에게 이야기하듯",
+  };
+
+  const styleMap: Record<string, string> = {
+    cinematic: "시네마틱하고 사실적인 장면. 영화 같은 조명과 구도.",
+    "simple-character": "심플한 졸라맨 스타일 캐릭터. 흰 배경, 간단한 선화, 미니멀한 표현.",
+    infographic: "깔끔한 인포그래픽 스타일. 차트, 그래프, 아이콘 중심.",
+    webtoon: "한국 웹툰 스타일의 일러스트레이션. 생동감 있는 색상.",
+  };
+
+  const systemPrompt = `당신은 유튜브 영상 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.`;
+
+  const userPrompt = `주제: "${topic}"
+${referenceUrl ? `참고 영상: ${referenceUrl}` : ""}
+
+${sectionCount}개 섹션으로 구성된 ${isShorts ? "유튜브 쇼츠(세로형 60초)" : "유튜브 롱폼 영상"} 대본을 작성하세요.
+
+이미지 프롬프트는 "${styleMap[visualStyle] || styleMap.cinematic}" 스타일로 작성하세요.
+
+JSON 형식:
+{
+  "title": "영상 제목",
+  "sections": [
+    {
+      "narration": "나레이션 텍스트 (2~4문장)",
+      "imagePrompt": "English image prompt for this scene. ${styleMap[visualStyle] || styleMap.cinematic}",
+      "subtitleHighlight": "핵심 자막 (짧은 문구)",
+      "duration": ${isShorts ? 15 : 30}
+    }
+  ],
+  "thumbnailPrompt": "English thumbnail image prompt, bold text overlay, eye-catching"
+}`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.8,
+      response_format: { type: "json_object" },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices[0].message.content;
+  return JSON.parse(content);
+}
+
+async function generateTTS(
+  text: string,
+  outputPath: string,
+  apiKey: string,
+): Promise<void> {
+  const response = await fetch("https://api.elevenlabs.io/v1/text-to-speech/pNInz6obpgDQGcFmaJgB", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "xi-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      text,
+      model_id: "eleven_multilingual_v2",
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.75,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`ElevenLabs API error: ${response.status} - ${err}`);
+  }
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(outputPath, buffer);
+}
+
+async function generateImage(
+  prompt: string,
+  outputPath: string,
+  apiKey: string,
+  isVertical: boolean,
+): Promise<void> {
+  const response = await fetch("https://api.openai.com/v1/images/generations", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-image-1",
+      prompt,
+      n: 1,
+      size: isVertical ? "1024x1536" : "1536x1024",
+      quality: "low",
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Image generation error: ${response.status} - ${err}`);
+  }
+
+  const data = await response.json();
+  const b64 = data.data[0].b64_json;
+  if (b64) {
+    fs.writeFileSync(outputPath, Buffer.from(b64, "base64"));
+  } else if (data.data[0].url) {
+    const imgRes = await fetch(data.data[0].url);
+    fs.writeFileSync(outputPath, Buffer.from(await imgRes.arrayBuffer()));
+  }
+}
+
+async function getAudioDuration(filePath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync("ffprobe", [
+      "-i", filePath,
+      "-show_entries", "format=duration",
+      "-v", "quiet",
+      "-of", "csv=p=0",
+    ]);
+    return parseFloat(stdout.trim()) || 10;
+  } catch {
+    return 10;
+  }
+}
+
+function sanitizeForFFmpeg(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/:/g, "\\:")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, " ")
+    .replace(/\r/g, "");
+}
+
+async function composeSectionVideo(
+  imagePath: string,
+  audioPath: string,
+  outputPath: string,
+  audioDuration: number,
+  isVertical: boolean,
+  subtitleText: string,
+): Promise<void> {
+  const width = isVertical ? 1080 : 1920;
+  const height = isVertical ? 1920 : 1080;
+  const totalDur = audioDuration + 1;
+  const frames = Math.ceil(totalDur * 30);
+  const fontSize = isVertical ? 48 : 36;
+  const safeSubtitle = sanitizeForFFmpeg(subtitleText);
+
+  const filterComplex =
+    `[0:v]scale=${Math.round(width * 1.3)}:${Math.round(height * 1.3)},` +
+    `zoompan=z='min(zoom+0.0008,1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${width}x${height}:fps=30,` +
+    `setsar=1,format=yuv420p,` +
+    `drawtext=text='${safeSubtitle}':fontsize=${fontSize}:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-h/6[out]`;
+
+  await execFileAsync("ffmpeg", [
+    "-y",
+    "-loop", "1", "-i", imagePath,
+    "-i", audioPath,
+    "-filter_complex", filterComplex,
+    "-map", "[out]", "-map", "1:a",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+    "-c:a", "aac", "-b:a", "128k",
+    "-t", String(totalDur),
+    "-shortest",
+    outputPath,
+  ], { timeout: 120000 });
+}
+
+async function concatenateVideos(
+  videoPaths: string[],
+  outputPath: string,
+): Promise<void> {
+  const listPath = outputPath.replace(".mp4", "_list.txt");
+  const listContent = videoPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
+  fs.writeFileSync(listPath, listContent);
+
+  try {
+    await execFileAsync("ffmpeg", [
+      "-y", "-f", "concat", "-safe", "0",
+      "-i", listPath,
+      "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+      "-c:a", "aac", "-b:a", "128k",
+      outputPath,
+    ], { timeout: 600000 });
+  } finally {
+    if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
+  }
+}
+
+export async function generateVideo(
+  projectId: number,
+  project: Project,
+  settingsMap: Record<string, string>,
+): Promise<void> {
+  const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
+  if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+
+  const openaiKey = settingsMap.OPENAI_API_KEY;
+  const elevenlabsKey = settingsMap.ELEVENLABS_API_KEY;
+  const isVertical = project.videoType === "shorts";
+
+  try {
+    await updateProgress(projectId, 5, "AI 대본 생성 중...");
+    const script = await generateScript(
+      project.topic,
+      project.videoType,
+      project.duration,
+      project.tone,
+      project.visualStyle,
+      project.referenceUrl,
+      openaiKey,
+    );
+
+    await db.update(projects).set({
+      scriptJson: script as any,
+      title: script.title || project.title,
+      progress: 15,
+      progressMessage: "대본 생성 완료. TTS 음성 생성 중...",
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+
+    const sectionVideos: string[] = [];
+
+    for (let i = 0; i < script.sections.length; i++) {
+      const section = script.sections[i];
+      const pctBase = 15 + ((i / script.sections.length) * 70);
+
+      await updateProgress(projectId, Math.round(pctBase), `섹션 ${i + 1}/${script.sections.length}: TTS 생성 중...`);
+      const audioPath = path.join(projectDir, `audio_${i}.mp3`);
+      await generateTTS(section.narration, audioPath, elevenlabsKey);
+
+      const audioDuration = await getAudioDuration(audioPath);
+
+      await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 생성 중...`);
+      const imagePath = path.join(projectDir, `image_${i}.png`);
+      await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical);
+
+      await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
+      const sectionPath = path.join(projectDir, `section_${i}.mp4`);
+      await composeSectionVideo(imagePath, audioPath, sectionPath, audioDuration, isVertical, section.subtitleHighlight);
+
+      sectionVideos.push(sectionPath);
+    }
+
+    await updateProgress(projectId, 88, "섹션 합치는 중...");
+    const finalPath = path.join(projectDir, `final_${projectId}.mp4`);
+    await concatenateVideos(sectionVideos, finalPath);
+
+    await updateProgress(projectId, 95, "썸네일 생성 중...");
+    const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
+    try {
+      await generateImage(script.thumbnailPrompt, thumbPath, openaiKey, false);
+    } catch (e) {
+      console.warn("Thumbnail generation failed, skipping:", e);
+    }
+
+    const relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
+    const relativeThumbnailPath = fs.existsSync(thumbPath)
+      ? `/files/project_${projectId}/thumbnail_${projectId}.png`
+      : null;
+
+    await db.update(projects).set({
+      status: "completed",
+      progress: 100,
+      progressMessage: "완료!",
+      videoUrl: relativeVideoPath,
+      thumbnailUrl: relativeThumbnailPath,
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+
+  } catch (err: any) {
+    console.error("Pipeline error:", err);
+    await db.update(projects).set({
+      status: "error",
+      errorMessage: err.message || "Video generation failed",
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+  }
+}
