@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic, Key, Settings2 } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic, Key, Settings2, Play, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const ELEVENLABS_VOICES = [
@@ -227,55 +227,11 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="voice" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">나레이션 음성</CardTitle>
-              <CardDescription>ElevenLabs TTS 음성을 선택하세요. 모든 음성은 한국어를 지원합니다.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Select
-                value={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB"}
-                onValueChange={(val) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: val }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="음성 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ELEVENLABS_VOICES.map((voice) => (
-                    <SelectItem key={voice.id} value={voice.id}>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{voice.name}</span>
-                        <span className="text-xs text-muted-foreground">{voice.description}</span>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <div className="rounded-lg border border-border p-4 bg-muted/30">
-                <h4 className="text-sm font-medium mb-2">음성 미리보기</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {ELEVENLABS_VOICES.map((voice) => {
-                    const isSelected = (values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB") === voice.id;
-                    return (
-                      <button
-                        key={voice.id}
-                        onClick={() => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: voice.id }))}
-                        className={`text-left p-3 rounded-lg border transition-colors ${
-                          isSelected
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-border hover:border-primary/50 hover:bg-muted/50"
-                        }`}
-                      >
-                        <div className="font-medium text-sm">{voice.name}</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">{voice.description}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <VoiceSelector
+            selectedVoiceId={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB"}
+            onSelect={(id) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: id }))}
+            hasApiKey={savedKeys.has("ELEVENLABS_API_KEY")}
+          />
 
           <Button
             className="w-full"
@@ -296,6 +252,115 @@ export default function Settings() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function VoiceSelector({ selectedVoiceId, onSelect, hasApiKey }: { selectedVoiceId: string; onSelect: (id: string) => void; hasApiKey: boolean }) {
+  const { toast } = useToast();
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [loadingVoiceId, setLoadingVoiceId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlayingVoiceId(null);
+  };
+
+  const playPreview = async (voiceId: string) => {
+    if (playingVoiceId === voiceId) {
+      stopAudio();
+      return;
+    }
+    stopAudio();
+
+    if (!hasApiKey) {
+      toast({ title: "API 키 필요", description: "ElevenLabs API 키를 먼저 등록해주세요.", variant: "destructive" });
+      return;
+    }
+
+    setLoadingVoiceId(voiceId);
+    try {
+      const res = await fetch(`${API_BASE}/voice-preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voiceId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "미리듣기 실패" }));
+        throw new Error(err.error || "미리듣기 실패");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setPlayingVoiceId(null);
+        URL.revokeObjectURL(url);
+      };
+      audio.play();
+      setPlayingVoiceId(voiceId);
+    } catch (err: any) {
+      toast({ title: "미리듣기 실패", description: err.message, variant: "destructive" });
+    } finally {
+      setLoadingVoiceId(null);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">나레이션 음성</CardTitle>
+        <CardDescription>음성을 선택하고 미리 들어보세요. 모든 음성은 한국어를 지원합니다.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {ELEVENLABS_VOICES.map((voice) => {
+            const isSelected = selectedVoiceId === voice.id;
+            const isPlaying = playingVoiceId === voice.id;
+            const isLoading = loadingVoiceId === voice.id;
+            return (
+              <div
+                key={voice.id}
+                className={`flex items-center gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${
+                  isSelected
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:border-primary/50 hover:bg-muted/50"
+                }`}
+                onClick={() => onSelect(voice.id)}
+              >
+                <button
+                  onClick={(e) => { e.stopPropagation(); playPreview(voice.id); }}
+                  disabled={isLoading}
+                  className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+                    isPlaying
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted hover:bg-primary/20"
+                  }`}
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : isPlaying ? (
+                    <Square className="w-3.5 h-3.5" />
+                  ) : (
+                    <Play className="w-4 h-4 ml-0.5" />
+                  )}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{voice.name}</div>
+                  <div className="text-xs text-muted-foreground">{voice.description}</div>
+                </div>
+                {isSelected && (
+                  <CheckCircle2 className="w-4 h-4 text-primary flex-shrink-0" />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

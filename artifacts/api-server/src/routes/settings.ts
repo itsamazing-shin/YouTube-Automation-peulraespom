@@ -58,4 +58,48 @@ router.put("/settings", async (req, res) => {
   }
 });
 
+router.post("/voice-preview", async (req, res) => {
+  try {
+    const { voiceId } = req.body as { voiceId: string };
+    if (!voiceId) return res.status(400).json({ error: "voiceId required" });
+
+    const allSettings = await db.select().from(settings);
+    const settingsMap: Record<string, string> = {};
+    for (const s of allSettings) settingsMap[s.key] = s.value;
+
+    const apiKey = settingsMap.ELEVENLABS_API_KEY;
+    if (!apiKey) return res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다." });
+
+    const sampleText = "안녕하세요, 이 음성은 미리듣기 샘플입니다. 영상에서 이 목소리로 나레이션이 생성됩니다.";
+
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        text: sampleText,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(response.status).json({ error: `ElevenLabs error: ${err}` });
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.set("Content-Type", "audio/mpeg");
+    res.set("Content-Length", String(buffer.length));
+    res.send(buffer);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
