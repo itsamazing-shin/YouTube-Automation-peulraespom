@@ -456,6 +456,7 @@ async function generateScript(
   commentAnalysis: string = "",
   referenceStyleDesc: string = "",
   latestNewsContext: string = "",
+  settingsMap?: Record<string, string>,
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
@@ -550,49 +551,69 @@ JSON 형식:
   "thumbnailPrompt": "이 필드에 영상 주제에 딱 맞는 구체적인 썸네일 이미지 프롬프트를 영어로 작성하세요. 반드시 지켜야 할 규칙: 1) 영상 주제의 핵심 내용을 시각적으로 보여주는 구체적 장면을 묘사 (예: 호르무즈 해협 봉쇄 → 해협을 막고 있는 전함과 불타는 유조선, 중국 경제 붕괴 → 무너지는 중국 도시 스카이라인과 하락하는 그래프를 형상화한 배경). 2) 단순히 사람 얼굴만 넣지 말 것 — 주제를 상징하는 배경/소품/상황이 반드시 포함되어야 함. 3) 텍스트/글자/문자 절대 포함하지 말 것. 4) 고대비 채도 높은 색상, 빨강/노랑/주황 강조. 5) 구도: 주요 피사체를 오른쪽에, 왼쪽 40%는 텍스트 오버레이 공간으로 비워둘 것. 6) 긴박감 있는 줌인 효과. Style: MrBeast/한국 탑 유튜버 썸네일 퀄리티."
 }`;
 
-  const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  const geminiProxyBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const geminiProxyApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  const userGeminiKey = settingsMap?.GEMINI_API_KEY || "";
 
   const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
 
   let content = "";
 
-  if (geminiBaseUrl && geminiApiKey) {
-    console.log(`[generateScript] Gemini 3.1 Pro 사용 (실시간 검색 포함)`);
+  const geminiConfigs: Array<{ url: string; headers: Record<string, string>; label: string }> = [];
 
-    const geminiUrl = `${geminiBaseUrl}/v1beta/models/gemini-3.1-pro-preview:generateContent`;
-    const geminiBody = {
-      contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
-      generationConfig: {
-        temperature: 1.0,
-        maxOutputTokens: 16000,
-        responseMimeType: "application/json",
-      },
-      tools: [{ googleSearch: {} }],
-    };
-
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": geminiApiKey,
-      },
-      body: JSON.stringify(geminiBody),
+  if (geminiProxyBaseUrl && geminiProxyApiKey) {
+    geminiConfigs.push({
+      url: `${geminiProxyBaseUrl}/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`,
+      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiProxyApiKey },
+      label: "Gemini (Replit 프록시)",
     });
+  }
 
-    if (!response.ok) {
-      const err = await response.text();
-      console.warn(`[generateScript] Gemini 실패 (${response.status}), GPT-4o로 폴백: ${err.substring(0, 200)}`);
-    } else {
+  if (userGeminiKey) {
+    geminiConfigs.push({
+      url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${userGeminiKey}`,
+      headers: { "Content-Type": "application/json" },
+      label: "Gemini (사용자 키)",
+    });
+  }
+
+  for (const cfg of geminiConfigs) {
+    try {
+      console.log(`[generateScript] ${cfg.label} 사용`);
+      const geminiBody = {
+        contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+        generationConfig: {
+          temperature: 1.0,
+          maxOutputTokens: 16000,
+          responseMimeType: "application/json",
+        },
+        tools: [{ googleSearch: {} }],
+      };
+
+      const response = await fetch(cfg.url, {
+        method: "POST",
+        headers: cfg.headers,
+        body: JSON.stringify(geminiBody),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.warn(`[generateScript] ${cfg.label} 실패 (${response.status}): ${err.substring(0, 200)}`);
+        continue;
+      }
+
       const data: any = await response.json();
       const candidate = data.candidates?.[0];
       if (candidate?.content?.parts?.[0]?.text) {
         content = candidate.content.parts[0].text;
         const groundingMeta = candidate.groundingMetadata;
         if (groundingMeta?.searchEntryPoint || groundingMeta?.groundingChunks?.length > 0) {
-          console.log(`[generateScript] Gemini 실시간 검색 활용됨 (${groundingMeta.groundingChunks?.length || 0}개 소스)`);
+          console.log(`[generateScript] ${cfg.label} 실시간 검색 활용됨 (${groundingMeta.groundingChunks?.length || 0}개 소스)`);
         }
+        break;
       }
+    } catch (e: any) {
+      console.warn(`[generateScript] ${cfg.label} 에러: ${e.message}`);
     }
   }
 
@@ -1823,6 +1844,7 @@ export async function generateVideo(
       commentAnalysis,
       referenceStyleDesc,
       latestNewsContext,
+      settingsMap,
     );
 
     await db.update(projects).set({
