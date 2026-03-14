@@ -104,4 +104,12 @@ app.get("/api/storage/{*storagePath}", async (req: Request, res: Response) => {
 
 app.use("/api", router);
 
+const frontendDist = path.join(process.cwd(), "..", "youtube-automation", "dist", "public");
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get("*", (_req: Request, res: Response) => {
+    res.sendFile(path.join(frontendDist, "index.html"));
+  });
+}
+
 export default app;

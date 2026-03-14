@@ -233,7 +233,7 @@ async function fetchYouTubeVideoInfo(
       console.warn("YouTube video info fetch failed:", res.status);
       return { title: "", description: "", captions: "" };
     }
-    const data = await res.json();
+    const data: any = await res.json();
     const snippet = data.items?.[0]?.snippet;
     if (!snippet) return { title: "", description: "", captions: "" };
 
@@ -242,7 +242,7 @@ async function fetchYouTubeVideoInfo(
       const captionListUrl = `https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId=${videoId}&key=${youtubeApiKey}`;
       const captionRes = await fetch(captionListUrl);
       if (captionRes.ok) {
-        const captionData = await captionRes.json();
+        const captionData: any = await captionRes.json();
         const captionInfo = captionData.items?.map((c: any) => `${c.snippet?.language}: ${c.snippet?.name}`).join(", ") || "";
         if (captionInfo) captions = `(자막 존재: ${captionInfo})`;
       }
@@ -273,7 +273,7 @@ async function fetchYouTubeComments(
       console.warn("YouTube comments fetch failed:", res.status);
       return [];
     }
-    const data = await res.json();
+    const data: any = await res.json();
     const comments: string[] = [];
     for (const item of data.items || []) {
       const text = item.snippet?.topLevelComment?.snippet?.textDisplay;
@@ -333,7 +333,7 @@ ${commentsText}`,
     return "";
   }
 
-  const data = await res.json();
+  const data: any = await res.json();
   return data.choices?.[0]?.message?.content || "";
 }
 
@@ -413,11 +413,11 @@ async function searchLatestNews(
       });
 
       if (!fallbackResponse.ok) return "";
-      const fallbackData = await fallbackResponse.json();
+      const fallbackData: any = await fallbackResponse.json();
       return fallbackData.choices?.[0]?.message?.content || "";
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
 
     let newsContent = "";
     if (data.output) {
@@ -584,7 +584,7 @@ JSON 형식:
       const err = await response.text();
       console.warn(`[generateScript] Gemini 실패 (${response.status}), GPT-4o로 폴백: ${err.substring(0, 200)}`);
     } else {
-      const data = await response.json();
+      const data: any = await response.json();
       const candidate = data.candidates?.[0];
       if (candidate?.content?.parts?.[0]?.text) {
         content = candidate.content.parts[0].text;
@@ -621,7 +621,7 @@ JSON 형식:
       throw new Error(`OpenAI API error: ${response.status} - ${err}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     content = data.choices[0].message.content;
   }
 
@@ -677,7 +677,7 @@ ${narrationGuide}
             }),
           });
           if (contResponse.ok) {
-            const contData = await contResponse.json();
+            const contData: any = await contResponse.json();
             contContent = contData.candidates?.[0]?.content?.parts?.[0]?.text || "";
           }
         }
@@ -693,7 +693,7 @@ ${narrationGuide}
             }),
           });
           if (contResponse.ok) {
-            const contData = await contResponse.json();
+            const contData: any = await contResponse.json();
             contContent = contData.choices[0].message.content;
           }
         }
@@ -789,7 +789,7 @@ async function transcribeWithWhisper(
     return [];
   }
 
-  const data = await response.json();
+  const data: any = await response.json();
   if (data.segments && Array.isArray(data.segments)) {
     return data.segments.map((seg: any) => ({
       text: seg.text.trim(),
@@ -837,7 +837,7 @@ async function generateImageGemini(
     throw new Error(`Gemini image generation error: ${response.status} - ${err}`);
   }
 
-  const data = await response.json();
+  const data: any = await response.json();
   const candidates = data.candidates;
   if (candidates && candidates[0]?.content?.parts) {
     for (const part of candidates[0].content.parts) {
@@ -878,7 +878,7 @@ async function generateImageOpenAI(
     throw new Error(`Image generation error: ${response.status} - ${err}`);
   }
 
-  const data = await response.json();
+  const data: any = await response.json();
   const b64 = data.data[0].b64_json;
   if (b64) {
     fs.writeFileSync(outputPath, Buffer.from(b64, "base64"));

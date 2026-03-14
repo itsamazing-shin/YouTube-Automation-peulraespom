@@ -32,7 +32,7 @@ const upload = multer({
 
 const router = Router();
 
-router.get("/projects", async (_req, res) => {
+router.get("/projects", async (_req, res): Promise<void> => {
   try {
     const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
     res.json(allProjects);
@@ -41,20 +41,20 @@ router.get("/projects", async (_req, res) => {
   }
 });
 
-router.get("/projects/:id", async (req, res) => {
+router.get("/projects/:id", async (req, res): Promise<void> => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.id, parseInt(req.params.id)));
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
     res.json(project);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch project" });
   }
 });
 
-router.post("/projects", async (req, res) => {
+router.post("/projects", async (req, res): Promise<void> => {
   try {
     const { title, topic, videoType, visualStyle, duration, tone, referenceUrl, referenceImageUrl } = req.body;
-    if (!topic?.trim()) return res.status(400).json({ error: "Topic is required" });
+    if (!topic?.trim()) { res.status(400).json({ error: "Topic is required" }); return; }
 
     const [project] = await db.insert(projects).values({
       title: title || topic,
@@ -74,13 +74,13 @@ router.post("/projects", async (req, res) => {
   }
 });
 
-router.post("/projects/:id/generate", async (req, res) => {
+router.post("/projects/:id/generate", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
-    if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+    if (isNaN(projectId)) { res.status(400).json({ error: "Invalid project ID" }); return; }
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-    if (!project) return res.status(404).json({ error: "Project not found" });
-    if (project.status === "generating") return res.status(409).json({ error: "이미 생성 중입니다. 잠시 기다려주세요." });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+    if (project.status === "generating") { res.status(409).json({ error: "이미 생성 중입니다. 잠시 기다려주세요." }); return; }
 
     const allSettings = await db.select().from(settings);
     const settingsMap: Record<string, string> = {};
@@ -102,10 +102,10 @@ router.post("/projects/:id/generate", async (req, res) => {
     }
 
     if (!settingsMap.OPENAI_API_KEY) {
-      return res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다. Settings에서 등록해주세요." });
+      res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다. Settings에서 등록해주세요." }); return;
     }
     if (!settingsMap.ELEVENLABS_API_KEY) {
-      return res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다. Settings에서 등록해주세요." });
+      res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다. Settings에서 등록해주세요." }); return;
     }
 
     if (!settingsMap.OPENAI_BASE_URL) {
@@ -136,14 +136,14 @@ router.post("/projects/:id/generate", async (req, res) => {
   }
 });
 
-router.post("/projects/:id/regenerate-thumbnail", async (req, res) => {
+router.post("/projects/:id/regenerate-thumbnail", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
     const { prompt } = req.body;
-    if (!prompt?.trim()) return res.status(400).json({ error: "썸네일 프롬프트를 입력해주세요." });
+    if (!prompt?.trim()) { res.status(400).json({ error: "썸네일 프롬프트를 입력해주세요." }); return; }
 
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
     const allSettings = await db.select().from(settings);
     const settingsMap: Record<string, string> = {};
@@ -157,7 +157,7 @@ router.post("/projects/:id/regenerate-thumbnail", async (req, res) => {
     }
 
     if (!settingsMap.OPENAI_API_KEY) {
-      return res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다." });
+      res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다." }); return;
     }
 
     const thumbnailUrl = await regenerateThumbnail(projectId, prompt, settingsMap.OPENAI_API_KEY, settingsMap.OPENAI_BASE_URL);
@@ -171,13 +171,13 @@ router.post("/projects/:id/regenerate-thumbnail", async (req, res) => {
   }
 });
 
-router.post("/projects/:id/upload-thumbnail", upload.single("thumbnail"), async (req, res) => {
+router.post("/projects/:id/upload-thumbnail", upload.single("thumbnail"), async (req, res): Promise<void> => {
   try {
-    const projectId = parseInt(req.params.id);
-    if (!req.file) return res.status(400).json({ error: "썸네일 이미지 파일이 필요합니다." });
+    const projectId = parseInt(req.params.id as string);
+    if (!req.file) { res.status(400).json({ error: "썸네일 이미지 파일이 필요합니다." }); return; }
 
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
     const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
     if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
@@ -201,9 +201,9 @@ router.post("/projects/:id/upload-thumbnail", upload.single("thumbnail"), async 
   }
 });
 
-router.post("/upload-reference-image", upload.single("image"), async (req, res) => {
+router.post("/upload-reference-image", upload.single("image"), async (req, res): Promise<void> => {
   try {
-    if (!req.file) return res.status(400).json({ error: "이미지 파일이 필요합니다." });
+    if (!req.file) { res.status(400).json({ error: "이미지 파일이 필요합니다." }); return; }
     const relativePath = `/files/reference_images/${req.file.filename}`;
     res.json({ success: true, imageUrl: relativePath });
   } catch (err: any) {
@@ -226,9 +226,9 @@ const logoUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-router.post("/upload-logo", logoUpload.single("logo"), async (req, res) => {
+router.post("/upload-logo", logoUpload.single("logo"), async (req, res): Promise<void> => {
   try {
-    if (!req.file) return res.status(400).json({ error: "로고 파일이 필요합니다." });
+    if (!req.file) { res.status(400).json({ error: "로고 파일이 필요합니다." }); return; }
     const relativePath = `/files/logos/${req.file.filename}`;
     await db.insert(settings).values({ key: "CHANNEL_LOGO", value: relativePath })
       .onConflictDoUpdate({ target: settings.key, set: { value: relativePath } });
@@ -238,7 +238,7 @@ router.post("/upload-logo", logoUpload.single("logo"), async (req, res) => {
   }
 });
 
-router.get("/logo", async (_req, res) => {
+router.get("/logo", async (_req, res): Promise<void> => {
   try {
     const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
     res.json({ logoUrl: row?.value || null });
@@ -247,7 +247,7 @@ router.get("/logo", async (_req, res) => {
   }
 });
 
-router.delete("/logo", async (_req, res) => {
+router.delete("/logo", async (_req, res): Promise<void> => {
   try {
     await db.delete(settings).where(eq(settings.key, "CHANNEL_LOGO"));
     const logoDir = path.join(OUTPUT_DIR, "logos");
@@ -278,22 +278,24 @@ const sectionVideoUpload = multer({
   },
 });
 
-router.post("/projects/:id/section-video/:sectionIndex", sectionVideoUpload.single("video"), async (req, res) => {
+router.post("/projects/:id/section-video/:sectionIndex", sectionVideoUpload.single("video"), async (req, res): Promise<void> => {
   try {
-    const projectId = parseInt(req.params.id);
-    const sectionIndex = parseInt(req.params.sectionIndex);
-    if (!req.file) return res.status(400).json({ error: "동영상 파일이 필요합니다." });
+    const projectId = parseInt(req.params.id as string);
+    const sectionIndex = parseInt(req.params.sectionIndex as string);
+    if (!req.file) { res.status(400).json({ error: "동영상 파일이 필요합니다." }); return; }
 
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
     if (!project) {
       if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." });
+      res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." });
+      return;
     }
 
     const script = project.scriptJson as any;
     if (script?.sections && (sectionIndex < 0 || sectionIndex >= script.sections.length)) {
       if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "유효하지 않은 섹션 번호입니다." });
+      res.status(400).json({ error: "유효하지 않은 섹션 번호입니다." });
+      return;
     }
 
     res.json({ success: true, sectionIndex, filename: req.file.filename });
@@ -302,7 +304,7 @@ router.post("/projects/:id/section-video/:sectionIndex", sectionVideoUpload.sing
   }
 });
 
-router.delete("/projects/:id/section-video/:sectionIndex", async (req, res) => {
+router.delete("/projects/:id/section-video/:sectionIndex", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
     const sectionIndex = parseInt(req.params.sectionIndex);
@@ -314,7 +316,7 @@ router.delete("/projects/:id/section-video/:sectionIndex", async (req, res) => {
   }
 });
 
-router.get("/projects/:id/section-videos", async (req, res) => {
+router.get("/projects/:id/section-videos", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
     const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
@@ -337,12 +339,12 @@ router.get("/projects/:id/section-videos", async (req, res) => {
   }
 });
 
-router.post("/projects/:id/recompose", async (req, res) => {
+router.post("/projects/:id/recompose", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-    if (!project) return res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." });
-    if (project.status !== "completed") return res.status(400).json({ error: "완료된 프로젝트만 재합성할 수 있습니다." });
+    if (!project) { res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." }); return; }
+    if (project.status !== "completed") { res.status(400).json({ error: "완료된 프로젝트만 재합성할 수 있습니다." }); return; }
 
     const allSettings = await db.select().from(settings);
     const settingsMap: Record<string, string> = {};
@@ -370,7 +372,7 @@ router.post("/projects/:id/recompose", async (req, res) => {
   }
 });
 
-router.delete("/projects/:id", async (req, res) => {
+router.delete("/projects/:id", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
@@ -401,7 +403,7 @@ router.delete("/projects/:id", async (req, res) => {
   }
 });
 
-router.post("/projects/migrate-to-storage", async (_req, res) => {
+router.post("/projects/migrate-to-storage", async (_req, res): Promise<void> => {
   try {
     const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
     if (!bucketId) {

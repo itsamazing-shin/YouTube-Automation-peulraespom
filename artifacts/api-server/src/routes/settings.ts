@@ -13,7 +13,7 @@ function maskApiKey(value: string): string {
   return value.substring(0, 4) + "••••" + value.substring(value.length - 4);
 }
 
-router.get("/settings", async (_req, res) => {
+router.get("/settings", async (_req, res): Promise<void> => {
   try {
     const allSettings = await db.select().from(settings);
     const masked = allSettings
@@ -30,11 +30,12 @@ router.get("/settings", async (_req, res) => {
   }
 });
 
-router.put("/settings", async (req, res) => {
+router.put("/settings", async (req, res): Promise<void> => {
   try {
     const { settings: settingsData } = req.body as { settings: Record<string, string> };
     if (!settingsData || typeof settingsData !== "object") {
-      return res.status(400).json({ error: "Invalid settings data" });
+      res.status(400).json({ error: "Invalid settings data" });
+      return;
     }
 
     for (const [key, value] of Object.entries(settingsData)) {
@@ -58,14 +59,14 @@ router.put("/settings", async (req, res) => {
   }
 });
 
-router.get("/voices", async (_req, res) => {
+router.get("/voices", async (_req, res): Promise<void> => {
   try {
     const allSettings = await db.select().from(settings);
     const settingsMap: Record<string, string> = {};
     for (const s of allSettings) settingsMap[s.key] = s.value;
 
     const apiKey = settingsMap.ELEVENLABS_API_KEY;
-    if (!apiKey) return res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다." });
+    if (!apiKey) { res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다." }); return; }
 
     try {
       const response = await fetch("https://api.elevenlabs.io/v1/voices", {
@@ -84,7 +85,7 @@ router.get("/voices", async (_req, res) => {
           previewUrl: v.preview_url || null,
           category: v.category || "",
         }));
-        return res.json(voices);
+        res.json(voices); return;
       }
     } catch {}
 
@@ -106,17 +107,17 @@ router.get("/voices", async (_req, res) => {
   }
 });
 
-router.post("/voice-preview", async (req, res) => {
+router.post("/voice-preview", async (req, res): Promise<void> => {
   try {
     const { voiceId } = req.body as { voiceId: string };
-    if (!voiceId) return res.status(400).json({ error: "voiceId required" });
+    if (!voiceId) { res.status(400).json({ error: "voiceId required" }); return; }
 
     const allSettings = await db.select().from(settings);
     const settingsMap: Record<string, string> = {};
     for (const s of allSettings) settingsMap[s.key] = s.value;
 
     const apiKey = settingsMap.ELEVENLABS_API_KEY;
-    if (!apiKey) return res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다." });
+    if (!apiKey) { res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다." }); return; }
 
     const sampleText = "안녕하세요.";
 
@@ -142,15 +143,15 @@ router.post("/voice-preview", async (req, res) => {
         try {
           const parsed = JSON.parse(errText);
           if (parsed?.detail?.status === "quota_exceeded" || errText.includes("quota")) {
-            return res.status(402).json({ error: "ElevenLabs 문자 할당량이 초과되었습니다. 플랜을 업그레이드하거나 다음 달까지 기다려주세요." });
+            res.status(402).json({ error: "ElevenLabs 문자 할당량이 초과되었습니다. 플랜을 업그레이드하거나 다음 달까지 기다려주세요." }); return;
           }
         } catch {}
-        return res.status(401).json({ error: "ElevenLabs API 키가 유효하지 않습니다." });
+        res.status(401).json({ error: "ElevenLabs API 키가 유효하지 않습니다." }); return;
       }
       if (response.status === 402) {
-        return res.status(402).json({ error: "ElevenLabs 문자 할당량이 초과되었습니다. 플랜을 업그레이드하거나 다음 달까지 기다려주세요." });
+        res.status(402).json({ error: "ElevenLabs 문자 할당량이 초과되었습니다. 플랜을 업그레이드하거나 다음 달까지 기다려주세요." }); return;
       }
-      return res.status(response.status).json({ error: `ElevenLabs 오류: ${errText}` });
+      res.status(response.status).json({ error: `ElevenLabs 오류: ${errText}` }); return;
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());

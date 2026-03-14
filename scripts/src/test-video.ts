@@ -140,7 +140,7 @@ async function generateSingleImage(section: ScriptSection): Promise<string> {
       size: "1536x1024",
     });
 
-    const base64 = response.data[0]?.b64_json ?? "";
+    const base64 = response.data?.[0]?.b64_json ?? "";
     if (base64) {
       const rawPath = join(OUTPUT_DIR, `image_${section.id}_raw.png`);
       await writeFile(rawPath, Buffer.from(base64, "base64"));
