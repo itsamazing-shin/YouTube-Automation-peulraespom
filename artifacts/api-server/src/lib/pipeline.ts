@@ -1773,7 +1773,29 @@ export async function generateVideo(
   let videoLogoPath: string | undefined;
   if (settingsMap.CHANNEL_LOGO) {
     const lp = path.join(OUTPUT_DIR, settingsMap.CHANNEL_LOGO.replace("/files/", ""));
-    if (fs.existsSync(lp)) videoLogoPath = lp;
+    if (fs.existsSync(lp)) {
+      videoLogoPath = lp;
+    } else {
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (bucketId) {
+        try {
+          const ext = path.extname(settingsMap.CHANNEL_LOGO) || ".png";
+          const bucket = objectStorageClient.bucket(bucketId);
+          const file = bucket.file(`branding/channel_logo${ext}`);
+          const [exists] = await file.exists();
+          if (exists) {
+            const logoDir = path.dirname(lp);
+            if (!fs.existsSync(logoDir)) fs.mkdirSync(logoDir, { recursive: true });
+            const [contents] = await file.download();
+            fs.writeFileSync(lp, contents);
+            videoLogoPath = lp;
+            console.log("로고 Object Storage에서 복원 완료 (파이프라인)");
+          }
+        } catch (e: any) {
+          console.warn("로고 복원 실패:", e.message);
+        }
+      }
+    }
   }
 
   try {

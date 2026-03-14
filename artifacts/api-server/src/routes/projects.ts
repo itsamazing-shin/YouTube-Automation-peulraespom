@@ -236,14 +236,57 @@ router.post("/upload-logo", logoUpload.single("logo"), async (req, res): Promise
     const relativePath = `/files/logos/${req.file.filename}`;
     await db.insert(settings).values({ key: "CHANNEL_LOGO", value: relativePath })
       .onConflictDoUpdate({ target: settings.key, set: { value: relativePath } });
+
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (bucketId) {
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        await bucket.upload(req.file.path, {
+          destination: `branding/channel_logo${path.extname(req.file.originalname) || ".png"}`,
+          metadata: { contentType: req.file.mimetype || "image/png" },
+        });
+        console.log("로고 Object Storage 업로드 완료");
+      } catch (e: any) {
+        console.warn("로고 Object Storage 업로드 실패:", e.message);
+      }
+    }
+
     res.json({ success: true, logoUrl: relativePath });
   } catch (err: any) {
     res.status(500).json({ error: err.message || "로고 업로드 실패" });
   }
 });
 
+async function ensureLogoFromStorage(): Promise<void> {
+  const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
+  if (!row?.value) return;
+
+  const localPath = path.join(OUTPUT_DIR, row.value.replace("/files/", ""));
+  if (fs.existsSync(localPath)) return;
+
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) return;
+
+  try {
+    const bucket = objectStorageClient.bucket(bucketId);
+    const ext = path.extname(row.value) || ".png";
+    const file = bucket.file(`branding/channel_logo${ext}`);
+    const [exists] = await file.exists();
+    if (!exists) return;
+
+    const logoDir = path.dirname(localPath);
+    if (!fs.existsSync(logoDir)) fs.mkdirSync(logoDir, { recursive: true });
+    const [contents] = await file.download();
+    fs.writeFileSync(localPath, contents);
+    console.log("로고 Object Storage에서 복원 완료");
+  } catch (e: any) {
+    console.warn("로고 복원 실패:", e.message);
+  }
+}
+
 router.get("/logo", async (_req, res): Promise<void> => {
   try {
+    await ensureLogoFromStorage();
     const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
     res.json({ logoUrl: row?.value || null });
   } catch {
@@ -257,6 +300,15 @@ router.delete("/logo", async (_req, res): Promise<void> => {
     const logoDir = path.join(OUTPUT_DIR, "logos");
     if (fs.existsSync(logoDir)) {
       for (const f of fs.readdirSync(logoDir)) fs.unlinkSync(path.join(logoDir, f));
+    }
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (bucketId) {
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        await bucket.file("branding/channel_logo.png").delete().catch(() => {});
+        await bucket.file("branding/channel_logo.jpg").delete().catch(() => {});
+        await bucket.file("branding/channel_logo.jpeg").delete().catch(() => {});
+      } catch {}
     }
     res.json({ success: true });
   } catch (err: any) {
