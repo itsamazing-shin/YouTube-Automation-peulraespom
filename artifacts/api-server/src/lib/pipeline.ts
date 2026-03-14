@@ -158,27 +158,41 @@ export async function regenerateThumbnail(
   const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
   const scriptData = project?.scriptJson as any;
   const thumbnailText = scriptData?.thumbnailText || project?.title || "";
-
-  const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
   const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
 
-  const noTextPrompt = customPrompt + " CRITICAL: Do NOT include any text, letters, or words in the image. Leave space for text overlay.";
-  await generateImage(noTextPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+  const [channelNameRow] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_NAME"));
+  const channelName = channelNameRow?.value || "";
 
-  if (fs.existsSync(thumbRawPath)) {
-    try {
-      let logoFilePath: string | undefined;
-      const [logoRow] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
-      if (logoRow?.value) {
-        const lp = path.join(OUTPUT_DIR, logoRow.value.replace("/files/", ""));
-        if (fs.existsSync(lp)) logoFilePath = lp;
+  const geminiSuccess = await generateThumbnailWithGemini(
+    thumbnailText,
+    customPrompt,
+    project?.title || "",
+    channelName,
+    thumbPath,
+  );
+
+  if (!geminiSuccess) {
+    const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
+    const noTextPrompt = customPrompt + " CRITICAL: Do NOT include any text, letters, or words in the image. Leave space for text overlay.";
+    await generateImage(noTextPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+
+    if (fs.existsSync(thumbRawPath)) {
+      try {
+        let logoFilePath: string | undefined;
+        const [logoRow] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_LOGO"));
+        if (logoRow?.value) {
+          const lp = path.join(OUTPUT_DIR, logoRow.value.replace("/files/", ""));
+          if (fs.existsSync(lp)) logoFilePath = lp;
+        }
+        await overlayTextOnImage(thumbRawPath, thumbPath, thumbnailText, false, logoFilePath);
+      } catch (e) {
+        console.warn("Text overlay failed, using raw image:", e);
+        fs.copyFileSync(thumbRawPath, thumbPath);
       }
-      await overlayTextOnImage(thumbRawPath, thumbPath, thumbnailText, false, logoFilePath);
-    } catch (e) {
-      console.warn("Text overlay failed, using raw image:", e);
-      fs.copyFileSync(thumbRawPath, thumbPath);
     }
+  }
 
+  if (fs.existsSync(thumbPath)) {
     const relativePath = `/files/project_${projectId}/thumbnail_${projectId}.png`;
     await db.update(projects).set({
       thumbnailUrl: relativePath,
@@ -1058,6 +1072,91 @@ async function generateImageGemini(
     }
   }
   throw new Error("Gemini returned no image data");
+}
+
+async function generateThumbnailWithGemini(
+  thumbnailText: string,
+  thumbnailPrompt: string,
+  title: string,
+  channelName: string,
+  outputPath: string,
+): Promise<boolean> {
+  const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+
+  if (!geminiApiKey || !geminiBaseUrl) {
+    console.warn("[Thumbnail] Gemini not configured, skipping direct thumbnail generation");
+    return false;
+  }
+
+  const lines = thumbnailText.split("\\n").join("\n").split("\n").filter(l => l.trim());
+  const line1 = lines[0] || title.substring(0, 12);
+  const line2 = lines[1] || "";
+
+  const prompt = `Create a YouTube thumbnail image in Korean YouTube viral style. This is a COMPLETE, READY-TO-USE thumbnail.
+
+BACKGROUND SCENE: ${thumbnailPrompt}
+
+TEXT OVERLAY REQUIREMENTS (MOST IMPORTANT — these must be rendered clearly):
+- Main headline line 1: "${line1}" — render in HUGE bold yellow text (노란색) with thick black outline/stroke, positioned in the lower-left area
+${line2 ? `- Main headline line 2: "${line2}" — render in HUGE bold white text (흰색) with thick black outline/stroke, directly below line 1` : ""}
+${channelName ? `- Channel name: "${channelName}" — small white text in a semi-transparent dark box in the top-left corner` : ""}
+
+CRITICAL STYLE RULES:
+- Text must be EXTREMELY LARGE — taking up 40-60% of the image width
+- Text must have THICK black outlines (stroke) for maximum readability
+- Use dramatic, high-contrast colors in the background
+- The overall feel should match top Korean YouTube channels like 신사임당, 슈카월드, 너만모르는경제학
+- Background should be darker/muted where text appears for contrast
+- Add subtle gradient overlay at bottom for text readability
+- Resolution: 1920x1080, landscape format
+- The Korean text MUST be perfectly rendered — no garbled characters
+
+DO NOT: Use small text, light outlines, or place text where it's hard to read.`;
+
+  try {
+    const response = await fetch(
+      `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["IMAGE", "TEXT"],
+            imageGenerationConfig: { aspectRatio: "16:9" },
+          },
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.warn(`[Thumbnail] Gemini thumbnail generation failed: ${response.status} - ${err.substring(0, 200)}`);
+      return false;
+    }
+
+    const data: any = await response.json();
+    const candidates = data.candidates;
+    if (candidates && candidates[0]?.content?.parts) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) {
+          const buf = Buffer.from(part.inlineData.data, "base64");
+          if (buf.length > 1000) {
+            fs.writeFileSync(outputPath, buf);
+            console.log(`[Thumbnail] Gemini 직접 썸네일 생성 성공 (${(buf.length / 1024).toFixed(0)}KB)`);
+            return true;
+          }
+        }
+      }
+    }
+
+    console.warn("[Thumbnail] Gemini returned no valid image data");
+    return false;
+  } catch (e: any) {
+    console.warn(`[Thumbnail] Gemini thumbnail error: ${e.message}`);
+    return false;
+  }
 }
 
 async function generateImageOpenAI(
@@ -2136,17 +2235,29 @@ export async function generateVideo(
     await updateProgress(projectId, 95, "썸네일 생성 중...");
     const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
     try {
-      const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
-      await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+      const channelName = settingsMap.CHANNEL_NAME || "";
+      const geminiThumbSuccess = await generateThumbnailWithGemini(
+        script.thumbnailText || script.title,
+        script.thumbnailPrompt || script.sections[0]?.imagePrompt || script.title,
+        script.title,
+        channelName,
+        thumbPath,
+      );
 
-      let logoFilePath: string | undefined;
-      const logoSetting = settingsMap.CHANNEL_LOGO;
-      if (logoSetting) {
-        const lp = path.join(OUTPUT_DIR, logoSetting.replace("/files/", ""));
-        if (fs.existsSync(lp)) logoFilePath = lp;
+      if (!geminiThumbSuccess) {
+        console.log("[Thumbnail] Gemini 직접 생성 실패, 기존 방식으로 폴백");
+        const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
+        await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+
+        let logoFilePath: string | undefined;
+        const logoSetting = settingsMap.CHANNEL_LOGO;
+        if (logoSetting) {
+          const lp = path.join(OUTPUT_DIR, logoSetting.replace("/files/", ""));
+          if (fs.existsSync(lp)) logoFilePath = lp;
+        }
+
+        await overlayTextOnImage(thumbRawPath, thumbPath, script.thumbnailText || script.title, false, logoFilePath);
       }
-
-      await overlayTextOnImage(thumbRawPath, thumbPath, script.thumbnailText || script.title, false, logoFilePath);
     } catch (e) {
       console.warn("Thumbnail generation failed, skipping:", e);
     }
