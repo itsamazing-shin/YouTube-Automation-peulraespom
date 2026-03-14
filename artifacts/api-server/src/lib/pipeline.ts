@@ -1328,9 +1328,11 @@ async function composeMultiImageSectionVideo(
   narrationText: string,
   whisperSegments?: WhisperSegment[],
   logoPath?: string,
+  subtitleHighlight?: string,
+  channelName?: string,
 ): Promise<void> {
   if (imagePaths.length <= 1) {
-    return composeSectionVideo(imagePaths[0], audioPath, outputPath, audioDuration, isVertical, narrationText, whisperSegments, logoPath);
+    return composeSectionVideo(imagePaths[0], audioPath, outputPath, audioDuration, isVertical, narrationText, whisperSegments, logoPath, 0, subtitleHighlight, channelName);
   }
 
   const width = isVertical ? 1080 : 1920;
@@ -1367,11 +1369,13 @@ async function composeMultiImageSectionVideo(
     const zpFilter = `zoompan=z='${zoomExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${clipFrames}:s=${width}x${height}:fps=${fps}`;
 
     const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
+    const clipLowerThird = subtitleHighlight ? buildLowerThirdFilter(isVertical, subtitleHighlight, channelName || "", false) : "";
+    const clipLtPart = clipLowerThird ? `,${clipLowerThird}` : "";
     await runFFmpeg([
       "-y",
       "-i", scaledPath,
       "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo`,
-      "-vf", `${zpFilter},format=yuv420p`,
+      "-vf", `${zpFilter},format=yuv420p${clipLtPart}`,
       "-c:v", "libx264", "-preset", "ultrafast",
       "-crf", "30",
       "-pix_fmt", "yuv420p",
@@ -1511,6 +1515,37 @@ function whisperSegmentsToSubtitles(segments: WhisperSegment[], isVertical: bool
   return result;
 }
 
+function buildLowerThirdFilter(
+  isVertical: boolean,
+  subtitleHighlight: string,
+  channelName: string,
+  hasLogo: boolean,
+): string {
+  const fontCandidates = [
+    path.resolve(process.cwd(), "assets", "fonts", "NotoSansCJKkr-Bold.otf"),
+    path.resolve(process.cwd(), "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf"),
+    path.resolve(process.cwd(), "..", "..", "assets", "fonts", "NotoSansCJKkr-Bold.otf"),
+    "/home/runner/workspace/assets/fonts/NotoSansCJKkr-Bold.otf",
+  ];
+  const fontPath = fontCandidates.find(f => fs.existsSync(f));
+  if (!fontPath || !subtitleHighlight.trim()) return "";
+
+  const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
+  const safeText = sanitizeForFFmpeg(subtitleHighlight);
+
+  const barH = isVertical ? 70 : 56;
+  const fontSize = isVertical ? 32 : 28;
+  const barY = isVertical ? `ih-${barH}-20` : `ih-${barH}-16`;
+  const textY = isVertical ? `ih-${barH}-20+(${barH}-${fontSize})/2` : `ih-${barH}-16+(${barH}-${fontSize})/2`;
+  const textX = "30";
+
+  let filter = `drawbox=y=${barY}:width=iw:height=${barH}:color=black@0.65:t=fill,` +
+    `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+    `:fontcolor=#FFFFFF:x=${textX}:y=${textY}`;
+
+  return filter;
+}
+
 async function composeSectionVideo(
   imagePath: string,
   audioPath: string,
@@ -1521,6 +1556,8 @@ async function composeSectionVideo(
   whisperSegments?: WhisperSegment[],
   logoPath?: string,
   sectionIndex: number = 0,
+  subtitleHighlight?: string,
+  channelName?: string,
 ): Promise<void> {
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
@@ -1574,16 +1611,19 @@ async function composeSectionVideo(
   const hasLogo = logoPath && fs.existsSync(logoPath);
   const logoW = isVertical ? 250 : 300;
 
-  console.log(`[composeSectionVideo] Ken Burns 효과 적용 (type=${effectType}, frames=${totalFrames}, logo=${!!hasLogo})`);
+  const lowerThird = subtitleHighlight ? buildLowerThirdFilter(isVertical, subtitleHighlight, channelName || "", !!hasLogo) : "";
+
+  console.log(`[composeSectionVideo] Ken Burns 효과 적용 (type=${effectType}, frames=${totalFrames}, logo=${!!hasLogo}, lowerThird=${!!lowerThird})`);
 
   if (hasLogo) {
+    const lowerThirdPart = lowerThird ? `,${lowerThird}` : "";
     await runFFmpeg([
       "-y",
       "-i", scaledImgPath,
       "-i", logoPath!,
       "-i", audioPath,
       "-filter_complex",
-      `[0:v]${zpFilter},format=yuv420p[zp];[1:v]scale=${logoW}:-1:flags=lanczos[logo];[zp][logo]overlay=W-w-20:20[out]`,
+      `[0:v]${zpFilter},format=yuv420p[zp];[1:v]scale=${logoW}:-1:flags=lanczos[logo];[zp][logo]overlay=W-w-20:20${lowerThirdPart}[out]`,
       "-map", "[out]", "-map", "2:a",
       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
       "-pix_fmt", "yuv420p",
@@ -1593,11 +1633,12 @@ async function composeSectionVideo(
       outputPath,
     ], 300000);
   } else {
+    const lowerThirdPart = lowerThird ? `,${lowerThird}` : "";
     await runFFmpeg([
       "-y",
       "-i", scaledImgPath,
       "-i", audioPath,
-      "-vf", `${zpFilter},format=yuv420p`,
+      "-vf", `${zpFilter},format=yuv420p${lowerThirdPart}`,
       "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-b:a", "128k",
@@ -2201,11 +2242,12 @@ export async function generateVideo(
 
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
       try {
-        console.log(`섹션 ${i + 1} 영상 합성 시작 (duration: ${audioDuration}s, images: ${sectionImagePaths.length})`);
+        const sectionHighlight = section.subtitleHighlight || "";
+        console.log(`섹션 ${i + 1} 영상 합성 시작 (duration: ${audioDuration}s, images: ${sectionImagePaths.length}, highlight: "${sectionHighlight}")`);
         if (sectionImagePaths.length > 1) {
-          await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+          await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath, sectionHighlight, channelName);
         } else {
-          await composeSectionVideo(sectionImagePaths[0], audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath, i);
+          await composeSectionVideo(sectionImagePaths[0], audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath, i, sectionHighlight, channelName);
         }
         console.log(`섹션 ${i + 1} 영상 합성 완료`);
       } catch (composeErr: any) {
