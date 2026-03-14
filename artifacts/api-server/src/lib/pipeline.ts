@@ -1537,13 +1537,12 @@ function buildLowerThirdFilter(
   const fontSize = isVertical ? 32 : 28;
   const barOffset = isVertical ? 20 : 16;
   const textPadding = Math.round((barH - fontSize) / 2);
-  const barY = `ih-${barH + barOffset}`;
-  const textY = `ih-${barH + barOffset - textPadding}`;
-  const textX = "30";
+  const barFromBottom = barH + barOffset;
+  const textFromBottom = barFromBottom - textPadding;
 
-  let filter = `drawbox=y=${barY}:width=iw:height=${barH}:color=black@0.65:t=fill,` +
+  let filter = `drawbox=y=ih-${barFromBottom}:width=iw:height=${barH}:color=black@0.65:t=fill,` +
     `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-    `:fontcolor=#FFFFFF:x=${textX}:y=${textY}`;
+    `:fontcolor=#FFFFFF:x=30:y=h-${textFromBottom}`;
 
   return filter;
 }
