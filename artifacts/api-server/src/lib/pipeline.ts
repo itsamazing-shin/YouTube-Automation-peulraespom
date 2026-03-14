@@ -1441,11 +1441,15 @@ async function concatenateVideos(
       const safeSrtPath = mergedSrtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
       const fontSize = isVertical ? 18 : 22;
       const marginV = isVertical ? 60 : 40;
+
+      const fontDir = path.resolve("/home/runner/workspace/assets/fonts");
+      const safeFontDir = fontDir.replace(/:/g, "\\:").replace(/\\/g, "/");
+      const fontName = "Noto Sans CJK KR";
       try {
         await runFFmpeg([
           "-y", "-f", "concat", "-safe", "0",
           "-i", listPath,
-          "-vf", `subtitles='${safeSrtPath}':force_style='FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=${marginV}'`,
+          "-vf", `subtitles='${safeSrtPath}':fontsdir='${safeFontDir}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=${marginV}'`,
           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
           "-r", "1", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "128k",
@@ -1490,7 +1494,7 @@ export async function generateVideo(
   const openaiKey = settingsMap.OPENAI_API_KEY;
   const openaiBaseUrl = settingsMap.OPENAI_BASE_URL || "https://api.openai.com/v1";
   const elevenlabsKey = settingsMap.ELEVENLABS_API_KEY;
-  const elevenlabsVoiceId = settingsMap.ELEVENLABS_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+  const elevenlabsVoiceId = settingsMap.ELEVENLABS_VOICE_ID || "XrExE9yKIg1WjnnlVkGX";
   const isVertical = project.videoType === "shorts";
 
   let videoLogoPath: string | undefined;

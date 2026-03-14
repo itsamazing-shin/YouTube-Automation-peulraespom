@@ -226,7 +226,7 @@ export default function Settings() {
 
         <TabsContent value="voice" className="space-y-4 mt-4">
           <VoiceSelector
-            selectedVoiceId={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "pNInz6obpgDQGcFmaJgB"}
+            selectedVoiceId={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "XrExE9yKIg1WjnnlVkGX"}
             onSelect={(id) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: id }))}
             hasApiKey={savedKeys.has("ELEVENLABS_API_KEY")}
           />
