@@ -524,7 +524,7 @@ function ChannelLogoSection() {
           {logoUrl ? (
             <div className="relative w-20 h-20 rounded-lg border border-border overflow-hidden bg-muted flex-shrink-0">
               <img
-                src={`${API_BASE.replace('/api', '')}${logoUrl}`}
+                src={`${API_BASE}${logoUrl}`}
                 alt="채널 로고"
                 className="w-full h-full object-contain"
               />
