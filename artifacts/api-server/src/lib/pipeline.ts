@@ -714,20 +714,24 @@ ${narrationGuide}
       try {
         let contContent = "";
 
-        if (geminiBaseUrl && geminiApiKey) {
-          const contUrl = `${geminiBaseUrl}/v1beta/models/gemini-3.1-pro-preview:generateContent`;
-          const contResponse = await fetch(contUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey },
-            body: JSON.stringify({
-              contents: [{ role: "user", parts: [{ text: continuePrompt }] }],
-              generationConfig: { temperature: 1.0, maxOutputTokens: 8000, responseMimeType: "application/json" },
-              tools: [{ googleSearch: {} }],
-            }),
-          });
-          if (contResponse.ok) {
-            const contData: any = await contResponse.json();
-            contContent = contData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        for (const cfg of geminiConfigs) {
+          try {
+            const contResponse = await fetch(cfg.url, {
+              method: "POST",
+              headers: cfg.headers,
+              body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: continuePrompt }] }],
+                generationConfig: { temperature: 1.0, maxOutputTokens: 8000, responseMimeType: "application/json" },
+                tools: [{ googleSearch: {} }],
+              }),
+            });
+            if (contResponse.ok) {
+              const contData: any = await contResponse.json();
+              contContent = contData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              if (contContent) break;
+            }
+          } catch (e: any) {
+            console.warn(`[generateScript] 추가 섹션 ${cfg.label} 실패: ${e.message}`);
           }
         }
 
