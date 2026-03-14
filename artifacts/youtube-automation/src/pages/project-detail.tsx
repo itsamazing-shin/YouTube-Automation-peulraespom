@@ -177,13 +177,13 @@ export default function ProjectDetail() {
               controls
               preload="metadata"
               className={`rounded-lg bg-black mx-auto ${project.videoType === "shorts" ? "max-h-[500px]" : "w-full"}`}
-              src={`${API_BASE}${project.videoUrl}`}
-              {...(project.thumbnailUrl ? { poster: `${API_BASE}${project.thumbnailUrl}` } : {})}
+              src={`${API_BASE}/projects/${project.id}/video`}
+              {...(project.thumbnailUrl ? { poster: `${API_BASE}/projects/${project.id}/thumbnail-file` } : {})}
             />
             <div className="flex gap-3 mt-4">
               <Button className="w-full flex-1" onClick={async () => {
                 try {
-                  const res = await fetch(`${API_BASE}${project.videoUrl}`);
+                  const res = await fetch(`${API_BASE}/projects/${project.id}/video`);
                   if (!res.ok) throw new Error("다운로드 실패");
                   const blob = await res.blob();
                   const url = URL.createObjectURL(blob);
@@ -217,7 +217,7 @@ export default function ProjectDetail() {
           <CardContent className="space-y-4">
             {project.thumbnailUrl && (
               <img
-                src={`${API_BASE}${project.thumbnailUrl}?t=${Date.now()}`}
+                src={`${API_BASE}/projects/${project.id}/thumbnail-file?t=${Date.now()}`}
                 alt="썸네일"
                 className="rounded-lg w-full max-w-md mx-auto"
               />

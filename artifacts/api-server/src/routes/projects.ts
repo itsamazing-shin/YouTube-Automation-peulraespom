@@ -459,4 +459,98 @@ router.post("/projects/migrate-to-storage", async (_req, res): Promise<void> => 
   }
 });
 
+async function serveProjectFile(
+  res: import("express").Response,
+  req: import("express").Request,
+  storagePath: string,
+  localPath: string,
+  contentType: string,
+): Promise<void> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+
+  if (bucketId) {
+    try {
+      const bucket = objectStorageClient.bucket(bucketId);
+      const file = bucket.file(storagePath);
+      const [exists] = await file.exists();
+      if (exists) {
+        const [metadata] = await file.getMetadata();
+        const fileSize = Number(metadata.size || 0);
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Cache-Control", "public, max-age=3600");
+
+        const range = req.headers.range;
+        if (range && fileSize > 0) {
+          const match = range.match(/bytes=(\d*)-(\d*)/);
+          if (!match) { res.status(416).setHeader("Content-Range", `bytes */${fileSize}`).end(); return; }
+          let start = match[1] ? parseInt(match[1], 10) : 0;
+          let end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+          if (!match[1] && match[2]) { start = Math.max(0, fileSize - parseInt(match[2], 10)); end = fileSize - 1; }
+          if (start >= fileSize || end >= fileSize || start > end) { res.status(416).setHeader("Content-Range", `bytes */${fileSize}`).end(); return; }
+          res.status(206);
+          res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+          res.setHeader("Content-Length", String(end - start + 1));
+          file.createReadStream({ start, end }).pipe(res);
+        } else {
+          if (fileSize) res.setHeader("Content-Length", String(fileSize));
+          file.createReadStream().pipe(res);
+        }
+        return;
+      }
+    } catch (e) {
+      console.warn("GCS serve error, trying local:", e);
+    }
+  }
+
+  if (fs.existsSync(localPath)) {
+    res.setHeader("Content-Type", contentType);
+    const stat = fs.statSync(localPath);
+    const fileSize = stat.size;
+    res.setHeader("Accept-Ranges", "bytes");
+    const range = req.headers.range;
+    if (range && fileSize > 0) {
+      const match = range.match(/bytes=(\d*)-(\d*)/);
+      if (match) {
+        let start = match[1] ? parseInt(match[1], 10) : 0;
+        let end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        if (start < fileSize && end < fileSize && start <= end) {
+          res.status(206);
+          res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+          res.setHeader("Content-Length", String(end - start + 1));
+          fs.createReadStream(localPath, { start, end }).pipe(res);
+          return;
+        }
+      }
+    }
+    res.setHeader("Content-Length", String(fileSize));
+    fs.createReadStream(localPath).pipe(res);
+    return;
+  }
+
+  res.status(404).json({ error: "파일을 찾을 수 없습니다." });
+}
+
+router.get("/projects/:id/video", async (req, res): Promise<void> => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const storagePath = `videos/project_${projectId}/final_${projectId}.mp4`;
+    const localPath = path.join(OUTPUT_DIR, `project_${projectId}`, `final_${projectId}.mp4`);
+    await serveProjectFile(res, req, storagePath, localPath, "video/mp4");
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: "영상 파일 제공 실패" });
+  }
+});
+
+router.get("/projects/:id/thumbnail-file", async (req, res): Promise<void> => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const storagePath = `videos/project_${projectId}/thumbnail_${projectId}.png`;
+    const localPath = path.join(OUTPUT_DIR, `project_${projectId}`, `thumbnail_${projectId}.png`);
+    await serveProjectFile(res, req, storagePath, localPath, "image/png");
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: "썸네일 파일 제공 실패" });
+  }
+});
+
 export default router;
