@@ -746,6 +746,11 @@ async function generateTTSWithGemini(
   const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
 
   const body = {
+    systemInstruction: {
+      parts: [{
+        text: "당신은 인기 있는 한국 유튜브 채널의 전문 내레이터입니다. 따뜻하고 친근하면서도 신뢰감 있는 목소리로 자연스럽게 읽어주세요. 마치 친구에게 이야기하듯 편안한 톤으로, 중요한 부분은 살짝 강조하며, 적절한 곳에서 자연스러운 호흡과 쉼을 넣어주세요. 기계적으로 읽지 말고, 감정을 담아 생동감 있게 전달해주세요."
+      }],
+    },
     contents: [{
       role: "user",
       parts: [{ text }],
