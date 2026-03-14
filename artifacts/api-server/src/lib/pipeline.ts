@@ -725,35 +725,65 @@ ${narrationGuide}
   return script;
 }
 
+async function generateTTSWithGoogleFallback(
+  text: string,
+  outputPath: string,
+): Promise<void> {
+  const { getAllAudioBase64 } = await import("google-tts-api");
+  const results = await getAllAudioBase64(text, { lang: "ko", slow: false });
+  const buffers = results.map((r: any) => Buffer.from(r.base64, "base64"));
+  const combined = Buffer.concat(buffers);
+  fs.writeFileSync(outputPath, combined);
+  console.log(`[Google TTS] 생성 완료: ${path.basename(outputPath)}`);
+}
+
 async function generateTTS(
   text: string,
   outputPath: string,
   apiKey: string,
   voiceId: string = "XrExE9yKIg1WjnnlVkGX",
 ): Promise<void> {
-  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "xi-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      text,
-      model_id: "eleven_multilingual_v2",
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`ElevenLabs API error: ${response.status} - ${err}`);
+  if (!apiKey || apiKey.trim() === "") {
+    console.log("[TTS] ElevenLabs 키 없음, Google TTS 사용");
+    return generateTTSWithGoogleFallback(text, outputPath);
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(outputPath, buffer);
+  try {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      const isQuotaOrAuth = response.status === 401 || response.status === 402 || response.status === 429;
+      if (isQuotaOrAuth) {
+        console.warn(`[TTS] ElevenLabs 실패 (${response.status}), Google TTS로 폴백`);
+        return generateTTSWithGoogleFallback(text, outputPath);
+      }
+      throw new Error(`ElevenLabs API error: ${response.status} - ${err}`);
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fs.writeFileSync(outputPath, buffer);
+  } catch (error: any) {
+    if (error.message?.includes("ElevenLabs API error")) {
+      console.warn(`[TTS] ElevenLabs 에러, Google TTS로 폴백: ${error.message}`);
+      return generateTTSWithGoogleFallback(text, outputPath);
+    }
+    throw error;
+  }
 }
 
 interface WhisperSegment {

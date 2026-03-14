@@ -184,12 +184,18 @@ importers:
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.1(@types/pg@8.18.0)(pg@8.20.0)
+      edge-tts:
+        specifier: ^1.0.1
+        version: 1.0.1(typescript@5.9.3)
       express:
         specifier: ^5
         version: 5.2.1
       google-auth-library:
         specifier: ^10.6.1
         version: 10.6.1
+      google-tts-api:
+        specifier: ^2.0.2
+        version: 2.0.2
       multer:
         specifier: ^2.1.1
         version: 2.1.1
@@ -642,7 +648,7 @@ importers:
     dependencies:
       openai:
         specifier: ^6.27.0
-        version: 6.27.0(zod@4.3.6)
+        version: 6.27.0(ws@8.19.0)(zod@4.3.6)
       p-limit:
         specifier: ^7.3.0
         version: 7.3.0
@@ -657,7 +663,7 @@ importers:
         version: link:../lib/integrations-openai-ai-server
       openai:
         specifier: ^6.27.0
-        version: 6.27.0(zod@4.3.6)
+        version: 6.27.0(ws@8.19.0)(zod@4.3.6)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -1847,6 +1853,9 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
+  axios@0.21.4:
+    resolution: {integrity: sha512-ut5vewkiu8jjGBdqpM44XxjuCjq9LAKeHVmoVfHVzy8eHgxxq8SbAVQNovDA8mVi05kP0Ea/n/UzcSHcTJQfNg==}
+
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
@@ -2189,6 +2198,11 @@ packages:
   ecdsa-sig-formatter@1.0.11:
     resolution: {integrity: sha512-nagl3RYrbNv6kQkeJIpt6NJZy8twLB/2vtz6yN9Z4vRKHN4/QZJIEbqohALSgwKdnksuY3k5Addp5lg8sVoVcQ==}
 
+  edge-tts@1.0.1:
+    resolution: {integrity: sha512-Yv5S4y5k3bWC+0iyD6PDCOI0SLpBN5B1Mv6apgyWjhHzU8GDrBMv6BvT9lZBY5O/4Ow7KFcYaItXC/H0BFmewA==}
+    peerDependencies:
+      typescript: ^5.0.0
+
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
@@ -2345,6 +2359,15 @@ packages:
     resolution: {integrity: sha512-JGG8pvDi2C+JxidYdIwQDyS/CgcrIdh18cvgxcBge3wSHRQOrooMD3GlFBcmMJAN9M42SAZjDp5zv1dglJjwww==}
     engines: {node: '>=20'}
 
+  follow-redirects@1.15.11:
+    resolution: {integrity: sha512-deG2P0JfjrTxl50XGCDyfI97ZGVCxIpfKYmfyrQ54n5FO/0gfIES8C/Psl6kWVDolizcaaxZJnTS0QSMxvnsBQ==}
+    engines: {node: '>=4.0'}
+    peerDependencies:
+      debug: '*'
+    peerDependenciesMeta:
+      debug:
+        optional: true
+
   foreground-child@3.3.1:
     resolution: {integrity: sha512-gIXjKqtFuWEgzFRJA9WCQeSJLZDjgJUOMCMzxtvFq/37KojM1BFGufqsCy0r4qSQmYLsZYMeyRqzIWOMup03sw==}
     engines: {node: '>=14'}
@@ -2458,6 +2481,9 @@ packages:
   google-logging-utils@1.1.3:
     resolution: {integrity: sha512-eAmLkjDjAFCVXg7A1unxHsLf961m6y17QFqXqAXGj/gVkKFrEICfStRfwUlGNfeCEjNRa32JEWOUTlYXPyyKvA==}
     engines: {node: '>=14'}
+
+  google-tts-api@2.0.2:
+    resolution: {integrity: sha512-MkQYbBJEdom8hJpfEVDfD3tpBtkz0X59C+FNsoRhbnCiFjZRnzyurGQ5OrAr3xkigII56/jmk0JNwZsp450G+Q==}
 
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
@@ -3483,6 +3509,18 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
+  ws@8.19.0:
+    resolution: {integrity: sha512-blAT2mjOEIi0ZzruJfIhb3nps74PRWTCz1IjglWEEpQl5XS/UNama6u2/rjFkDDouqr4L67ry+1aGIALViWjDg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   xtend@4.0.2:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
@@ -4873,6 +4911,12 @@ snapshots:
 
   asynckit@0.4.0: {}
 
+  axios@0.21.4:
+    dependencies:
+      follow-redirects: 1.15.11
+    transitivePeerDependencies:
+      - debug
+
   balanced-match@1.0.2: {}
 
   base64-js@1.5.1: {}
@@ -5115,6 +5159,14 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
+  edge-tts@1.0.1(typescript@5.9.3):
+    dependencies:
+      typescript: 5.9.3
+      ws: 8.19.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   ee-first@1.1.1: {}
 
   electron-to-chromium@1.5.307: {}
@@ -5302,6 +5354,8 @@ snapshots:
       locate-path: 8.0.0
       unicorn-magic: 0.3.0
 
+  follow-redirects@1.15.11: {}
+
   foreground-child@3.3.1:
     dependencies:
       cross-spawn: 7.0.6
@@ -5460,6 +5514,12 @@ snapshots:
   google-logging-utils@0.0.2: {}
 
   google-logging-utils@1.1.3: {}
+
+  google-tts-api@2.0.2:
+    dependencies:
+      axios: 0.21.4
+    transitivePeerDependencies:
+      - debug
 
   gopd@1.2.0: {}
 
@@ -5749,8 +5809,9 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.27.0(zod@4.3.6):
+  openai@6.27.0(ws@8.19.0)(zod@4.3.6):
     optionalDependencies:
+      ws: 8.19.0
       zod: 4.3.6
 
   orval@8.5.3(prettier@3.8.1)(typescript@5.9.3):
@@ -6406,6 +6467,8 @@ snapshots:
       strip-ansi: 7.2.0
 
   wrappy@1.0.2: {}
+
+  ws@8.19.0: {}
 
   xtend@4.0.2: {}
 
