@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { projects, settings } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { generateVideo, regenerateThumbnail, recomposeVideo } from "../lib/pipeline";
-import { objectStorageClient } from "../lib/objectStorage";
+import { objectStorageClient, signObjectURL } from "../lib/objectStorage";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -556,12 +556,55 @@ async function serveProjectFile(
   res.status(404).json({ error: "파일을 찾을 수 없습니다." });
 }
 
+router.get("/projects/:id/video-url", async (req, res): Promise<void> => {
+  try {
+    const projectId = parseInt(req.params.id);
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      res.status(400).json({ error: "잘못된 프로젝트 ID입니다." });
+      return;
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) {
+      res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." });
+      return;
+    }
+
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    const objectName = `videos/project_${projectId}/final_${projectId}.mp4`;
+
+    if (bucketId) {
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        const file = bucket.file(objectName);
+        const [exists] = await file.exists();
+        if (exists) {
+          const signedUrl = await signObjectURL({
+            bucketName: bucketId,
+            objectName,
+            method: "GET",
+            ttlSec: 3600,
+          });
+          res.json({ url: signedUrl, expiresIn: 3600 });
+          return;
+        }
+      } catch (e) {
+        console.warn("Signed URL failed:", e);
+      }
+    }
+
+    res.json({ url: `/api/projects/${projectId}/video`, expiresIn: null });
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: "영상 URL 생성 실패" });
+  }
+});
+
 router.get("/projects/:id/video", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
-    const storagePath = `videos/project_${projectId}/final_${projectId}.mp4`;
+    const objectName = `videos/project_${projectId}/final_${projectId}.mp4`;
     const localPath = path.join(OUTPUT_DIR, `project_${projectId}`, `final_${projectId}.mp4`);
-    await serveProjectFile(res, req, storagePath, localPath, "video/mp4");
+    await serveProjectFile(res, req, objectName, localPath, "video/mp4");
   } catch (err: any) {
     if (!res.headersSent) res.status(500).json({ error: "영상 파일 제공 실패" });
   }

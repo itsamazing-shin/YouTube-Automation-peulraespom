@@ -57,9 +57,9 @@ artifacts-monorepo/
 - `DELETE /api/projects/:id/section-video/:idx` — Remove custom section video
 - `GET /api/projects/:id/section-videos` — List uploaded custom section videos
 - `POST /api/projects/:id/recompose` — Re-merge final MP4 with custom section videos
-- `GET /api/projects/:id/video` — Stream project video (MP4, supports Range requests)
+- `GET /api/projects/:id/video-url` — Get signed GCS URL for video (JSON: `{url, expiresIn}`)
+- `GET /api/projects/:id/video` — Stream project video (MP4, fallback for local files)
 - `GET /api/projects/:id/thumbnail-file` — Serve project thumbnail (PNG)
-- `GET /api/storage/{path}` — Serve files from Object Storage (legacy)
 
 ## Video Generation Pipeline
 
@@ -92,4 +92,4 @@ artifacts-monorepo/
 - **Pexels supplementary images**: Only for cinematic style; other styles (character, infographic, webtoon) use AI images only to avoid style mismatch
 - **Thumbnail upload**: Users can upload custom thumbnails via `/projects/:id/upload-thumbnail`
 - **Grok/xAI**: Optional (requires XAI_API_KEY with credits), falls back to gpt-image-1
-- **Object Storage**: Final videos & thumbnails uploaded to GCS-backed Object Storage for persistence across deployments. Served via dedicated endpoints `/api/projects/:id/video` and `/api/projects/:id/thumbnail-file` (avoids SPA rewrite conflict in production). Migration endpoint: `POST /api/projects/migrate-to-storage`
+- **Object Storage**: Final videos & thumbnails uploaded to GCS-backed Object Storage for persistence across deployments. Videos served via signed GCS URLs (browser fetches directly from GCS, bypassing proxy). Frontend uses `/api/projects/:id/video-url` to get time-limited signed URL, auto-refreshes before expiry. Fallback to Express streaming for local-only files. `ensureFastStart()` ensures moov atom at file beginning for instant playback. Migration endpoint: `POST /api/projects/migrate-to-storage`

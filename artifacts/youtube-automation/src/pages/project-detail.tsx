@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText, Image, Sparkles, Upload, Film, Trash2, RotateCcw } from "lucide-react";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
@@ -173,35 +173,7 @@ export default function ProjectDetail() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <video
-              controls
-              preload="metadata"
-              className={`rounded-lg bg-black mx-auto ${project.videoType === "shorts" ? "max-h-[500px]" : "w-full"}`}
-              src={`${API_BASE}/projects/${project.id}/video`}
-              {...(project.thumbnailUrl ? { poster: `${API_BASE}/projects/${project.id}/thumbnail-file` } : {})}
-            />
-            <div className="flex gap-3 mt-4">
-              <Button className="w-full flex-1" onClick={async () => {
-                try {
-                  const res = await fetch(`${API_BASE}/projects/${project.id}/video`);
-                  if (!res.ok) throw new Error("다운로드 실패");
-                  const blob = await res.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `${project.title || "video"}.mp4`;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                } catch (e: any) {
-                  alert(e.message || "다운로드에 실패했습니다.");
-                }
-              }}>
-                <Download className="w-4 h-4 mr-2" />
-                MP4 다운로드
-              </Button>
-            </div>
+            <VideoPlayer projectId={project.id} videoType={project.videoType} title={project.title} thumbnailUrl={project.thumbnailUrl} />
           </CardContent>
         </Card>
       )}
@@ -576,5 +548,72 @@ function SectionVideoManager({ projectId, sections }: { projectId: number; secti
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function VideoPlayer({ projectId, videoType, title, thumbnailUrl }: { projectId: number; videoType: string; title: string; thumbnailUrl: string | null }) {
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchVideoUrl = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/video-url`);
+      if (!res.ok) throw new Error("영상 URL 로드 실패");
+      const data = await res.json();
+      setVideoSrc(data.url);
+      setLoading(false);
+      if (data.expiresIn) {
+        if (refreshTimer.current) clearTimeout(refreshTimer.current);
+        refreshTimer.current = setTimeout(() => fetchVideoUrl(), (data.expiresIn - 120) * 1000);
+      }
+    } catch (e: any) {
+      setVideoSrc(`${API_BASE}/projects/${projectId}/video`);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchVideoUrl();
+    return () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); };
+  }, [projectId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48 bg-black rounded-lg">
+        <Loader2 className="w-8 h-8 animate-spin text-white" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <video
+        controls
+        preload="metadata"
+        className={`rounded-lg bg-black mx-auto ${videoType === "shorts" ? "max-h-[500px]" : "w-full"}`}
+        src={videoSrc || undefined}
+        {...(thumbnailUrl ? { poster: `${API_BASE}/projects/${projectId}/thumbnail-file` } : {})}
+      />
+      <div className="flex gap-3 mt-4">
+        <Button className="w-full flex-1" onClick={async () => {
+          try {
+            const url = videoSrc || `${API_BASE}/projects/${projectId}/video`;
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${title || "video"}.mp4`;
+            a.target = "_blank";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          } catch (e: any) {
+            alert(e.message || "다운로드에 실패했습니다.");
+          }
+        }}>
+          <Download className="w-4 h-4 mr-2" />
+          MP4 다운로드
+        </Button>
+      </div>
+    </>
   );
 }
