@@ -510,49 +510,104 @@ JSON 형식:
   "thumbnailPrompt": "이 필드에 영상 주제에 딱 맞는 구체적인 썸네일 이미지 프롬프트를 영어로 작성하세요. 반드시 지켜야 할 규칙: 1) 영상 주제의 핵심 내용을 시각적으로 보여주는 구체적 장면을 묘사 (예: 호르무즈 해협 봉쇄 → 해협을 막고 있는 전함과 불타는 유조선, 중국 경제 붕괴 → 무너지는 중국 도시 스카이라인과 하락하는 그래프를 형상화한 배경). 2) 단순히 사람 얼굴만 넣지 말 것 — 주제를 상징하는 배경/소품/상황이 반드시 포함되어야 함. 3) 텍스트/글자/문자 절대 포함하지 말 것. 4) 고대비 채도 높은 색상, 빨강/노랑/주황 강조. 5) 구도: 주요 피사체를 오른쪽에, 왼쪽 40%는 텍스트 오버레이 공간으로 비워둘 것. 6) 긴박감 있는 줌인 효과. Style: MrBeast/한국 탑 유튜버 썸네일 퀄리티."
 }`;
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 1.0,
-      max_tokens: 16000,
-      response_format: { type: "json_object" },
-    }),
-  });
+  const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+  const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+
+  let content = "";
+
+  if (geminiBaseUrl && geminiApiKey) {
+    console.log(`[generateScript] Gemini 사용 (실시간 검색 포함)`);
+
+    const geminiUrl = `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash:generateContent`;
+    const geminiBody = {
+      contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
+      generationConfig: {
+        temperature: 1.0,
+        maxOutputTokens: 16000,
+        responseMimeType: "application/json",
+      },
+      tools: [{ googleSearch: {} }],
+    };
+
+    const response = await fetch(geminiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": geminiApiKey,
+      },
+      body: JSON.stringify(geminiBody),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.warn(`[generateScript] Gemini 실패 (${response.status}), GPT-4o로 폴백: ${err.substring(0, 200)}`);
+    } else {
+      const data = await response.json();
+      const candidate = data.candidates?.[0];
+      if (candidate?.content?.parts?.[0]?.text) {
+        content = candidate.content.parts[0].text;
+        const groundingMeta = candidate.groundingMetadata;
+        if (groundingMeta?.searchEntryPoint || groundingMeta?.groundingChunks?.length > 0) {
+          console.log(`[generateScript] Gemini 실시간 검색 활용됨 (${groundingMeta.groundingChunks?.length || 0}개 소스)`);
+        }
+      }
+    }
   }
 
-  const data = await response.json();
-  const content = data.choices[0].message.content;
-  const script: VideoScript = JSON.parse(content);
+  if (!content) {
+    console.log(`[generateScript] GPT-4o 사용`);
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 1.0,
+        max_tokens: 16000,
+        response_format: { type: "json_object" },
+      }),
+    });
 
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+    }
+
+    const data = await response.json();
+    content = data.choices[0].message.content;
+  }
+
+  let cleanContent = content.trim();
+  if (cleanContent.startsWith("```json")) {
+    cleanContent = cleanContent.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+  } else if (cleanContent.startsWith("```")) {
+    cleanContent = cleanContent.replace(/^```\s*/, "").replace(/\s*```$/, "");
+  }
+
+  const script: VideoScript = JSON.parse(cleanContent);
   console.log(`[generateScript] 요청 섹션: ${sectionCount}, 생성된 섹션: ${script.sections.length}`);
 
   if (script.sections.length < sectionCount) {
     const remaining = sectionCount - script.sections.length;
     console.log(`[generateScript] ${remaining}개 섹션 추가 생성 시작...`);
 
-    const batchSize = 20;
     let currentSections = script.sections.length;
 
     while (currentSections < sectionCount) {
-      const needed = Math.min(batchSize, sectionCount - currentSections);
-      const existingSummary = script.sections.map((s, idx) => `섹션${idx + 1}: ${s.narration.substring(0, 30)}...`).join("\n");
+      const needed = Math.min(15, sectionCount - currentSections);
+      const existingSummary = script.sections.slice(-5).map((s, idx) => `섹션${currentSections - 4 + idx}: ${s.narration.substring(0, 40)}...`).join("\n");
 
       const continuePrompt = `이전 대본에서 ${currentSections}개 섹션이 작성되었습니다. 이어서 ${needed}개 섹션을 추가로 작성하세요.
 
-기존 섹션 요약:
+최근 작성된 섹션:
 ${existingSummary}
 
 ⚠️ 기존 내용과 중복되지 않는 새로운 내용으로 이어서 작성하세요.
@@ -568,28 +623,47 @@ ${narrationGuide}
 }`;
 
       try {
-        const contResponse = await fetch(`${baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: "gpt-4o",
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: continuePrompt },
-            ],
-            temperature: 1.0,
-            max_tokens: 8000,
-            response_format: { type: "json_object" },
-          }),
-        });
+        let contContent = "";
 
-        if (contResponse.ok) {
-          const contData = await contResponse.json();
-          const contContent = contData.choices[0].message.content;
-          const contScript = JSON.parse(contContent);
+        if (geminiBaseUrl && geminiApiKey) {
+          const contUrl = `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash:generateContent`;
+          const contResponse = await fetch(contUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: continuePrompt }] }],
+              generationConfig: { temperature: 1.0, maxOutputTokens: 8000, responseMimeType: "application/json" },
+              tools: [{ googleSearch: {} }],
+            }),
+          });
+          if (contResponse.ok) {
+            const contData = await contResponse.json();
+            contContent = contData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          }
+        }
+
+        if (!contContent) {
+          const contResponse = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              model: "gpt-4o",
+              messages: [{ role: "system", content: systemPrompt }, { role: "user", content: continuePrompt }],
+              temperature: 1.0, max_tokens: 8000, response_format: { type: "json_object" },
+            }),
+          });
+          if (contResponse.ok) {
+            const contData = await contResponse.json();
+            contContent = contData.choices[0].message.content;
+          }
+        }
+
+        if (contContent) {
+          let cleanCont = contContent.trim();
+          if (cleanCont.startsWith("```json")) cleanCont = cleanCont.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+          else if (cleanCont.startsWith("```")) cleanCont = cleanCont.replace(/^```\s*/, "").replace(/\s*```$/, "");
+
+          const contScript = JSON.parse(cleanCont);
           if (contScript.sections && contScript.sections.length > 0) {
             script.sections.push(...contScript.sections);
             currentSections = script.sections.length;
@@ -598,7 +672,6 @@ ${narrationGuide}
             break;
           }
         } else {
-          console.warn(`[generateScript] 추가 섹션 생성 실패:`, await contResponse.text());
           break;
         }
       } catch (e) {
