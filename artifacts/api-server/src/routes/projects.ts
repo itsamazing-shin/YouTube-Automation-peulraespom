@@ -373,7 +373,28 @@ router.post("/projects/:id/recompose", async (req, res) => {
 router.delete("/projects/:id", async (req, res) => {
   try {
     const projectId = parseInt(req.params.id);
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+
     await db.delete(projects).where(eq(projects.id, projectId));
+
+    const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
+    if (fs.existsSync(projectDir)) {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (bucketId) {
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        const [files] = await bucket.getFiles({ prefix: `videos/project_${projectId}/` });
+        if (files.length > 0) {
+          await Promise.all(files.map(f => f.delete().catch(() => {})));
+        }
+      } catch (e) {
+        console.warn("Object Storage 파일 삭제 실패:", e);
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to delete project" });
