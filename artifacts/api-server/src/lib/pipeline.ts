@@ -452,6 +452,8 @@ async function generateScript(
   const systemPrompt = `당신은 한국 유튜브 조회수 폭발 전문 대본 작가입니다. ${toneMap[tone] || toneMap.calm} 스타일로 대본을 작성합니다.
 ${isShorts ? "쇼츠 영상이므로 첫 문장부터 강렬한 후킹으로 시작하세요. 짧고 임팩트 있는 문장을 사용하고, 긴박감과 호기심을 유발하세요." : ""}
 
+🌐 중요: 오늘 날짜는 ${new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" })}입니다. 반드시 현재 시점의 최신 뉴스, 이슈, 트렌드, 여론을 실시간 검색하여 대본에 반영하세요. 과거 정보가 아닌, 지금 현재 벌어지고 있는 최신 사건과 데이터를 기반으로 작성해야 합니다. 구체적인 날짜, 최신 수치, 실제 사건명을 포함하세요.
+
 ⏱️ 영상 총 목표 길이: 약 ${totalTargetMin}분 (${totalTargetSeconds}초)
 - 총 ${sectionCount}개 섹션, 섹션당 약 ${targetDurationPerSection}초씩
 - 한국어 TTS는 약 1초에 5~6자를 읽으므로, 섹션당 나레이션은 최소 ${Math.round(targetDurationPerSection * 5)}자 이상 필요합니다
@@ -518,9 +520,9 @@ JSON 형식:
   let content = "";
 
   if (geminiBaseUrl && geminiApiKey) {
-    console.log(`[generateScript] Gemini 사용 (실시간 검색 포함)`);
+    console.log(`[generateScript] Gemini 3.1 Pro 사용 (실시간 검색 포함)`);
 
-    const geminiUrl = `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash:generateContent`;
+    const geminiUrl = `${geminiBaseUrl}/v1beta/models/gemini-3.1-pro-preview:generateContent`;
     const geminiBody = {
       contents: [{ role: "user", parts: [{ text: fullPrompt }] }],
       generationConfig: {
@@ -626,7 +628,7 @@ ${narrationGuide}
         let contContent = "";
 
         if (geminiBaseUrl && geminiApiKey) {
-          const contUrl = `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash:generateContent`;
+          const contUrl = `${geminiBaseUrl}/v1beta/models/gemini-3.1-pro-preview:generateContent`;
           const contResponse = await fetch(contUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-goog-api-key": geminiApiKey },

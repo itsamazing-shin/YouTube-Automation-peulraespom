@@ -15,7 +15,7 @@ YouTube Video Automation Dashboard (VideoForge) — pnpm workspace monorepo usin
 - **Frontend**: React + Vite + Shadcn UI + TanStack Query + Wouter
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **Video**: FFmpeg (Ken Burns, subtitles, concatenation)
-- **AI APIs**: Gemini 2.5 Flash (대본 생성, 실시간 검색), OpenAI (GPT-4o 폴백 + gpt-image-1), ElevenLabs TTS, Pexels (스톡 이미지), xAI Grok (optional)
+- **AI APIs**: Gemini 3.1 Pro Preview (대본 생성, 실시간 Google 검색 grounding), OpenAI (GPT-4o 폴백 + gpt-image-1 썸네일), ElevenLabs TTS, Pexels (스톡 이미지), xAI Grok (뉴스 검색 보조)
 
 ## Structure
 
