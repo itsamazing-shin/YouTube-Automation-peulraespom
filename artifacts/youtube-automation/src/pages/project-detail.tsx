@@ -181,12 +181,26 @@ export default function ProjectDetail() {
               {...(project.thumbnailUrl ? { poster: `${API_BASE}${project.thumbnailUrl}` } : {})}
             />
             <div className="flex gap-3 mt-4">
-              <a href={`${API_BASE}${project.videoUrl}`} download className="flex-1">
-                <Button className="w-full">
-                  <Download className="w-4 h-4 mr-2" />
-                  MP4 다운로드
-                </Button>
-              </a>
+              <Button className="w-full flex-1" onClick={async () => {
+                try {
+                  const res = await fetch(`${API_BASE}${project.videoUrl}`);
+                  if (!res.ok) throw new Error("다운로드 실패");
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${project.title || "video"}.mp4`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch (e: any) {
+                  alert(e.message || "다운로드에 실패했습니다.");
+                }
+              }}>
+                <Download className="w-4 h-4 mr-2" />
+                MP4 다운로드
+              </Button>
             </div>
           </CardContent>
         </Card>

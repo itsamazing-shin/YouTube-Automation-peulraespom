@@ -104,12 +104,24 @@ app.get("/api/storage/{*storagePath}", async (req: Request, res: Response) => {
 
 app.use("/api", router);
 
-const frontendDist = path.join(process.cwd(), "..", "youtube-automation", "dist", "public");
-if (fs.existsSync(frontendDist)) {
+const possibleFrontendDirs = [
+  path.join(process.cwd(), "..", "youtube-automation", "dist", "public"),
+  path.join(process.cwd(), "artifacts", "youtube-automation", "dist", "public"),
+];
+const frontendDist = possibleFrontendDirs.find(d => fs.existsSync(d));
+
+if (frontendDist) {
+  console.log("Serving frontend from:", frontendDist);
   app.use(express.static(frontendDist));
-  app.get("*", (_req: Request, res: Response) => {
+  app.use((req: Request, res: Response) => {
+    if (req.path.startsWith("/api/")) {
+      res.status(404).json({ error: "API route not found" });
+      return;
+    }
     res.sendFile(path.join(frontendDist, "index.html"));
   });
+} else {
+  console.log("No frontend dist found, checked:", possibleFrontendDirs);
 }
 
 export default app;
