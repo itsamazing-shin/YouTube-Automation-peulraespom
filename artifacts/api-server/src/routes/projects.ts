@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { projects, settings } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { generateVideo, regenerateThumbnail, recomposeVideo } from "../lib/pipeline";
+import { objectStorageClient } from "../lib/objectStorage";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -376,6 +377,62 @@ router.delete("/projects/:id", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to delete project" });
+  }
+});
+
+router.post("/projects/migrate-to-storage", async (_req, res) => {
+  try {
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) {
+      res.status(400).json({ error: "Object Storage가 설정되지 않았습니다." });
+      return;
+    }
+
+    const allProjects = await db.select().from(projects).where(eq(projects.status, "completed"));
+    let migrated = 0;
+
+    for (const project of allProjects) {
+      if (project.videoUrl?.startsWith("/storage/")) continue;
+
+      const projectDir = path.join(OUTPUT_DIR, `project_${project.id}`);
+      const finalVideoPath = path.join(projectDir, `final_${project.id}.mp4`);
+
+      if (!fs.existsSync(finalVideoPath)) continue;
+
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        const storageDest = `videos/project_${project.id}/final_${project.id}.mp4`;
+        await bucket.upload(finalVideoPath, {
+          destination: storageDest,
+          metadata: { contentType: "video/mp4" },
+        });
+
+        const updates: any = {
+          videoUrl: `/storage/${storageDest}`,
+          updatedAt: new Date(),
+        };
+
+        const thumbPath = path.join(projectDir, `thumbnail_${project.id}.png`);
+        if (project.thumbnailUrl && !project.thumbnailUrl.startsWith("/storage/") && fs.existsSync(thumbPath)) {
+          const thumbDest = `videos/project_${project.id}/thumbnail_${project.id}.png`;
+          await bucket.upload(thumbPath, {
+            destination: thumbDest,
+            metadata: { contentType: "image/png" },
+          });
+          updates.thumbnailUrl = `/storage/${thumbDest}`;
+        }
+
+        await db.update(projects).set(updates).where(eq(projects.id, project.id));
+        migrated++;
+        console.log(`프로젝트 ${project.id} 마이그레이션 완료`);
+      } catch (err: any) {
+        console.error(`프로젝트 ${project.id} 마이그레이션 실패:`, err.message);
+      }
+    }
+
+    res.json({ success: true, migrated, total: allProjects.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

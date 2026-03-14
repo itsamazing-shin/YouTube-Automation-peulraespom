@@ -5,6 +5,44 @@ import type { Project } from "@workspace/db/schema";
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
+import { objectStorageClient } from "./objectStorage";
+
+async function uploadToObjectStorage(localFilePath: string, storagePath: string): Promise<string> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) {
+    console.warn("Object Storage가 설정되지 않았습니다. 로컬 파일만 사용합니다.");
+    return "";
+  }
+  try {
+    const bucket = objectStorageClient.bucket(bucketId);
+    await bucket.upload(localFilePath, {
+      destination: storagePath,
+      metadata: {
+        contentType: localFilePath.endsWith(".mp4") ? "video/mp4" : "image/png",
+      },
+    });
+    console.log(`Object Storage 업로드 완료: ${storagePath}`);
+    return `/storage/${storagePath}`;
+  } catch (err: any) {
+    console.error("Object Storage 업로드 실패:", err.message);
+    return "";
+  }
+}
+
+export async function downloadFromObjectStorage(storagePath: string): Promise<Buffer | null> {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) return null;
+  try {
+    const bucket = objectStorageClient.bucket(bucketId);
+    const file = bucket.file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+    const [contents] = await file.download();
+    return contents;
+  } catch {
+    return null;
+  }
+}
 
 function runFFmpeg(args: string[], timeout: number = 300000): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -1827,10 +1865,27 @@ export async function generateVideo(
       console.warn("Thumbnail generation failed, skipping:", e);
     }
 
-    const relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
-    const relativeThumbnailPath = fs.existsSync(thumbPath)
+    let relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
+    let relativeThumbnailPath: string | null = fs.existsSync(thumbPath)
       ? `/files/project_${projectId}/thumbnail_${projectId}.png`
       : null;
+
+    const finalVideoLocalPath = path.join(projectDir, `final_${projectId}.mp4`);
+    if (fs.existsSync(finalVideoLocalPath)) {
+      const storageUrl = await uploadToObjectStorage(
+        finalVideoLocalPath,
+        `videos/project_${projectId}/final_${projectId}.mp4`
+      );
+      if (storageUrl) relativeVideoPath = storageUrl;
+    }
+
+    if (relativeThumbnailPath && fs.existsSync(thumbPath)) {
+      const thumbStorageUrl = await uploadToObjectStorage(
+        thumbPath,
+        `videos/project_${projectId}/thumbnail_${projectId}.png`
+      );
+      if (thumbStorageUrl) relativeThumbnailPath = thumbStorageUrl;
+    }
 
     await db.update(projects).set({
       status: "completed",
@@ -1911,7 +1966,15 @@ export async function recomposeVideo(
     const finalPath = path.join(projectDir, `final_${projectId}.mp4`);
     await concatenateVideos(sectionVideos, finalPath, isVertical);
 
-    const relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
+    let relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
+    if (fs.existsSync(finalPath)) {
+      const storageUrl = await uploadToObjectStorage(
+        finalPath,
+        `videos/project_${projectId}/final_${projectId}.mp4`
+      );
+      if (storageUrl) relativeVideoPath = storageUrl;
+    }
+
     await db.update(projects).set({
       status: "completed",
       progress: 100,

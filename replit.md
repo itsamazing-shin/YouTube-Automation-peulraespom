@@ -90,3 +90,4 @@ artifacts-monorepo/
 - **Pexels supplementary images**: Only for cinematic style; other styles (character, infographic, webtoon) use AI images only to avoid style mismatch
 - **Thumbnail upload**: Users can upload custom thumbnails via `/projects/:id/upload-thumbnail`
 - **Grok/xAI**: Optional (requires XAI_API_KEY with credits), falls back to gpt-image-1
+- **Object Storage**: Final videos & thumbnails uploaded to GCS-backed Object Storage for persistence across deployments. Served via `/api/storage/{path}`. Migration endpoint: `POST /api/projects/migrate-to-storage`
