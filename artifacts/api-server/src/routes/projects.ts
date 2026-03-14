@@ -459,6 +459,56 @@ router.post("/projects/migrate-to-storage", async (_req, res): Promise<void> => 
   }
 });
 
+function parseRange(rangeHeader: string, fileSize: number): { start: number; end: number } | null {
+  const match = rangeHeader.match(/bytes=(\d*)-(\d*)/);
+  if (!match) return null;
+
+  const hasStart = match[1] !== "";
+  const hasEnd = match[2] !== "";
+  let start: number;
+  let end: number;
+
+  if (!hasStart && hasEnd) {
+    const suffixLen = parseInt(match[2], 10);
+    start = Math.max(0, fileSize - suffixLen);
+    end = fileSize - 1;
+  } else if (hasStart && !hasEnd) {
+    start = parseInt(match[1], 10);
+    end = fileSize - 1;
+  } else if (hasStart && hasEnd) {
+    start = parseInt(match[1], 10);
+    end = parseInt(match[2], 10);
+  } else {
+    return null;
+  }
+
+  if (start < 0 || end < 0 || start > end || start >= fileSize) return null;
+  end = Math.min(end, fileSize - 1);
+  return { start, end };
+}
+
+function streamRange(
+  res: import("express").Response,
+  fileSize: number,
+  rangeHeader: string | undefined,
+  createStream: (opts?: { start: number; end: number }) => NodeJS.ReadableStream,
+): void {
+  if (rangeHeader && fileSize > 0) {
+    const parsed = parseRange(rangeHeader, fileSize);
+    if (!parsed) {
+      res.status(416).setHeader("Content-Range", `bytes */${fileSize}`).end();
+      return;
+    }
+    res.status(206);
+    res.setHeader("Content-Range", `bytes ${parsed.start}-${parsed.end}/${fileSize}`);
+    res.setHeader("Content-Length", String(parsed.end - parsed.start + 1));
+    createStream(parsed).pipe(res);
+  } else {
+    if (fileSize) res.setHeader("Content-Length", String(fileSize));
+    createStream().pipe(res);
+  }
+}
+
 async function serveProjectFile(
   res: import("express").Response,
   req: import("express").Request,
@@ -480,22 +530,9 @@ async function serveProjectFile(
         res.setHeader("Accept-Ranges", "bytes");
         res.setHeader("Cache-Control", "public, max-age=3600");
 
-        const range = req.headers.range;
-        if (range && fileSize > 0) {
-          const match = range.match(/bytes=(\d*)-(\d*)/);
-          if (!match) { res.status(416).setHeader("Content-Range", `bytes */${fileSize}`).end(); return; }
-          let start = match[1] ? parseInt(match[1], 10) : 0;
-          let end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
-          if (!match[1] && match[2]) { start = Math.max(0, fileSize - parseInt(match[2], 10)); end = fileSize - 1; }
-          if (start >= fileSize || end >= fileSize || start > end) { res.status(416).setHeader("Content-Range", `bytes */${fileSize}`).end(); return; }
-          res.status(206);
-          res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
-          res.setHeader("Content-Length", String(end - start + 1));
-          file.createReadStream({ start, end }).pipe(res);
-        } else {
-          if (fileSize) res.setHeader("Content-Length", String(fileSize));
-          file.createReadStream().pipe(res);
-        }
+        streamRange(res, fileSize, req.headers.range, (opts) =>
+          opts ? file.createReadStream({ start: opts.start, end: opts.end }) : file.createReadStream()
+        );
         return;
       }
     } catch (e) {
@@ -508,23 +545,11 @@ async function serveProjectFile(
     const stat = fs.statSync(localPath);
     const fileSize = stat.size;
     res.setHeader("Accept-Ranges", "bytes");
-    const range = req.headers.range;
-    if (range && fileSize > 0) {
-      const match = range.match(/bytes=(\d*)-(\d*)/);
-      if (match) {
-        let start = match[1] ? parseInt(match[1], 10) : 0;
-        let end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
-        if (start < fileSize && end < fileSize && start <= end) {
-          res.status(206);
-          res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`);
-          res.setHeader("Content-Length", String(end - start + 1));
-          fs.createReadStream(localPath, { start, end }).pipe(res);
-          return;
-        }
-      }
-    }
-    res.setHeader("Content-Length", String(fileSize));
-    fs.createReadStream(localPath).pipe(res);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    streamRange(res, fileSize, req.headers.range, (opts) =>
+      opts ? fs.createReadStream(localPath, { start: opts.start, end: opts.end }) : fs.createReadStream(localPath)
+    );
     return;
   }
 

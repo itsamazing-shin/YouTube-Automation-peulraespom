@@ -1513,6 +1513,22 @@ async function mergeSectionSRTs(videoPaths: string[]): Promise<string | null> {
   return subtitlesToSRT(allSubs);
 }
 
+async function ensureFastStart(filePath: string): Promise<void> {
+  try {
+    const tmpPath = filePath + ".faststart.mp4";
+    await runFFmpeg([
+      "-y", "-i", filePath,
+      "-c", "copy",
+      "-movflags", "+faststart",
+      tmpPath,
+    ], 300000);
+    fs.renameSync(tmpPath, filePath);
+    console.log(`[ensureFastStart] moov atom moved to front: ${path.basename(filePath)}`);
+  } catch (err: any) {
+    console.warn("[ensureFastStart] failed, using original file:", err.message);
+  }
+}
+
 async function concatenateVideos(
   videoPaths: string[],
   outputPath: string,
@@ -1872,6 +1888,7 @@ export async function generateVideo(
 
     const finalVideoLocalPath = path.join(projectDir, `final_${projectId}.mp4`);
     if (fs.existsSync(finalVideoLocalPath)) {
+      await ensureFastStart(finalVideoLocalPath);
       const storageUrl = await uploadToObjectStorage(
         finalVideoLocalPath,
         `videos/project_${projectId}/final_${projectId}.mp4`
@@ -1968,6 +1985,7 @@ export async function recomposeVideo(
 
     let relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
     if (fs.existsSync(finalPath)) {
+      await ensureFastStart(finalPath);
       const storageUrl = await uploadToObjectStorage(
         finalPath,
         `videos/project_${projectId}/final_${projectId}.mp4`
