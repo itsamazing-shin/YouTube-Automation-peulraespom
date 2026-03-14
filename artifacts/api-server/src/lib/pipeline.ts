@@ -563,7 +563,7 @@ JSON 형식:
 
   if (geminiProxyBaseUrl && geminiProxyApiKey) {
     geminiConfigs.push({
-      url: `${geminiProxyBaseUrl}/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`,
+      url: `${geminiProxyBaseUrl}/v1beta/models/gemini-3.1-pro-preview:generateContent`,
       headers: { "Content-Type": "application/json", "x-goog-api-key": geminiProxyApiKey },
       label: "Gemini (Replit 프록시)",
     });
@@ -571,7 +571,7 @@ JSON 형식:
 
   if (userGeminiKey) {
     geminiConfigs.push({
-      url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${userGeminiKey}`,
+      url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${userGeminiKey}`,
       headers: { "Content-Type": "application/json" },
       label: "Gemini (사용자 키)",
     });
