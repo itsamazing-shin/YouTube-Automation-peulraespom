@@ -264,6 +264,44 @@ export default function Settings() {
             </CardContent>
           </Card>
 
+          {(values["TTS_ENGINE"] || settings.find(s => s.key === "TTS_ENGINE")?.value || "elevenlabs") === "gemini" && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Gemini 음성 선택</CardTitle>
+                <CardDescription>나레이션에 사용할 Gemini TTS 음성을 선택하세요.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {[
+                  { value: "Kore", label: "Kore", desc: "차분하고 또렷한 여성 음성 (기본, 권장)" },
+                  { value: "Leda", label: "Leda", desc: "부드럽고 따뜻한 여성 음성" },
+                  { value: "Aoede", label: "Aoede", desc: "밝고 친근한 여성 음성" },
+                  { value: "Zephyr", label: "Zephyr", desc: "가볍고 경쾌한 음성" },
+                  { value: "Puck", label: "Puck", desc: "활기차고 에너지 넘치는 음성" },
+                  { value: "Charon", label: "Charon", desc: "깊고 차분한 남성 음성" },
+                  { value: "Orus", label: "Orus", desc: "무게감 있는 남성 음성" },
+                  { value: "Fenrir", label: "Fenrir", desc: "힘 있고 진지한 남성 음성" },
+                ].map(voice => {
+                  const currentVoice = values["GEMINI_VOICE_NAME"] || settings.find(s => s.key === "GEMINI_VOICE_NAME")?.value || "Kore";
+                  return (
+                    <div
+                      key={voice.value}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${currentVoice === voice.value ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
+                      onClick={() => setValues(prev => ({ ...prev, GEMINI_VOICE_NAME: voice.value }))}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${currentVoice === voice.value ? "border-primary" : "border-muted-foreground"}`}>
+                        {currentVoice === voice.value && <div className="w-1.5 h-1.5 rounded-full bg-primary" />}
+                      </div>
+                      <div>
+                        <div className="font-medium text-sm">{voice.label}</div>
+                        <div className="text-xs text-muted-foreground">{voice.desc}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {(values["TTS_ENGINE"] || settings.find(s => s.key === "TTS_ENGINE")?.value || "elevenlabs") === "elevenlabs" && (
             <VoiceSelector
               selectedVoiceId={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "XrExE9yKIg1WjnnlVkGX"}

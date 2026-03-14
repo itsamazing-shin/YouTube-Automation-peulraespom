@@ -830,7 +830,16 @@ async function generateTTSWithGemini(
   const body = {
     systemInstruction: {
       parts: [{
-        text: "당신은 인기 있는 한국 유튜브 채널의 전문 내레이터입니다. 따뜻하고 친근하면서도 신뢰감 있는 목소리로 자연스럽게 읽어주세요. 마치 친구에게 이야기하듯 편안한 톤으로, 중요한 부분은 살짝 강조하며, 적절한 곳에서 자연스러운 호흡과 쉼을 넣어주세요. 기계적으로 읽지 말고, 감정을 담아 생동감 있게 전달해주세요."
+        text: `당신은 신사임당, 슈카월드 같은 인기 한국 유튜브 경제/교양 채널의 전문 여성 내레이터입니다.
+
+목소리 스타일:
+- 차분하고 또렷한 톤을 기본으로 하되, 내용의 중요도에 따라 자연스럽게 톤과 속도를 변화시키세요.
+- 충격적인 숫자나 사실을 말할 때는 살짝 놀란 듯 강조하고, 설명 부분에서는 편안하게 이야기하듯 전달하세요.
+- 문장 끝을 너무 올리거나 내리지 말고, 자연스러운 한국어 억양을 유지하세요.
+- 쉼표와 마침표에서 자연스러운 호흡을 넣어 기계적으로 들리지 않게 하세요.
+- 빠르지 않은 적당한 속도로, 시청자가 내용을 이해하면서 들을 수 있게 전달하세요.
+- 전문적이면서도 친근한 느낌을 동시에 주세요. 뉴스 앵커처럼 딱딱하지 않고, 옆에서 이야기해주는 느낌으로.
+- "~입니다", "~했는데요" 등 한국어 어미를 자연스러운 톤으로 발화하세요.`
       }],
     },
     contents: [{
@@ -883,7 +892,12 @@ async function tryElevenLabs(text: string, outputPath: string, apiKey: string, v
     body: JSON.stringify({
       text,
       model_id: "eleven_multilingual_v2",
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      voice_settings: {
+        stability: 0.65,
+        similarity_boost: 0.80,
+        style: 0.35,
+        use_speaker_boost: true,
+      },
     }),
   });
   if (!response.ok) {
@@ -903,6 +917,7 @@ async function generateTTS(
 ): Promise<void> {
   const ttsEngine = settingsMap?.TTS_ENGINE || "elevenlabs";
   const geminiKey = settingsMap?.GEMINI_API_KEY || "";
+  const geminiVoice = settingsMap?.GEMINI_VOICE_NAME || "Kore";
 
   if (ttsEngine === "google") {
     return generateTTSWithGoogleTranslate(text, outputPath);
@@ -912,8 +927,8 @@ async function generateTTS(
 
   if (ttsEngine === "gemini" && geminiKey) {
     engines.push(async () => {
-      console.log("[TTS] Gemini TTS 시도...");
-      await generateTTSWithGemini(text, outputPath, geminiKey);
+      console.log(`[TTS] Gemini TTS 시도 (음성: ${geminiVoice})...`);
+      await generateTTSWithGemini(text, outputPath, geminiKey, geminiVoice);
     });
     if (apiKey && apiKey.trim() !== "") {
       engines.push(async () => {
@@ -930,8 +945,8 @@ async function generateTTS(
     }
     if (geminiKey) {
       engines.push(async () => {
-        console.log("[TTS] Gemini TTS 폴백 시도...");
-        await generateTTSWithGemini(text, outputPath, geminiKey);
+        console.log(`[TTS] Gemini TTS 폴백 시도 (음성: ${geminiVoice})...`);
+        await generateTTSWithGemini(text, outputPath, geminiKey, geminiVoice);
       });
     }
   }
