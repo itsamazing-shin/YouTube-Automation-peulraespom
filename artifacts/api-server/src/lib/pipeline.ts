@@ -691,7 +691,7 @@ async function generateTTS(
   text: string,
   outputPath: string,
   apiKey: string,
-  voiceId: string = "pNInz6obpgDQGcFmaJgB",
+  voiceId: string = "XrExE9yKIg1WjnnlVkGX",
 ): Promise<void> {
   const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
@@ -997,6 +997,7 @@ async function composeMultiImageSectionVideo(
   const srtPath = outputPath.replace(".mp4", ".srt");
   fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
 
+  const fps = 2;
   const clipPaths: string[] = [];
   for (let i = 0; i < imgCount; i++) {
     const scaledPath = outputPath.replace(".mp4", `_img${i}_scaled.jpg`);
@@ -1008,13 +1009,20 @@ async function composeMultiImageSectionVideo(
       scaledPath,
     ], 60000);
 
+    const clipFrames = Math.ceil(clipDur * fps);
+    const zoomInc = (0.1 / Math.max(clipFrames, 1)).toFixed(6);
+    const isZoomIn = i % 2 === 0;
+    const zoomExpr = isZoomIn ? `min(1.0+${zoomInc}*on,1.1)` : `max(1.1-${zoomInc}*on,1.0)`;
+    const zpFilter = `zoompan=z='${zoomExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${clipFrames}:s=${width}x${height}:fps=${fps}`;
+
     const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
     await runFFmpeg([
       "-y",
-      "-loop", "1", "-i", scaledPath,
+      "-i", scaledPath,
       "-f", "lavfi", "-i", `anullsrc=r=44100:cl=stereo`,
-      "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-      "-crf", "30", "-r", "1", "-g", "10",
+      "-vf", `${zpFilter},format=yuv420p`,
+      "-c:v", "libx264", "-preset", "ultrafast",
+      "-crf", "30",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac",
       "-t", clipDur.toFixed(3),
@@ -1103,11 +1111,12 @@ function splitNarrationToSubtitles(narration: string, totalDuration: number, isV
     }
 
     const chunkDur = duration / lines.length;
+    const gap = 0.05;
     for (const line of lines) {
       subtitles.push({
         text: line,
         start: currentTime,
-        end: currentTime + chunkDur,
+        end: currentTime + chunkDur - gap,
       });
       currentTime += chunkDur;
     }
@@ -1119,13 +1128,14 @@ function splitNarrationToSubtitles(narration: string, totalDuration: number, isV
 function whisperSegmentsToSubtitles(segments: WhisperSegment[], isVertical: boolean): Array<{ text: string; start: number; end: number }> {
   const maxCharsPerLine = isVertical ? 12 : 20;
   const result: Array<{ text: string; start: number; end: number }> = [];
+  const gap = 0.05;
 
   for (const seg of segments) {
     const text = seg.text.trim();
     if (!text) continue;
 
     if (text.length <= maxCharsPerLine) {
-      result.push({ text, start: seg.start, end: seg.end });
+      result.push({ text, start: seg.start, end: seg.end - gap });
     } else {
       const segDur = seg.end - seg.start;
       const lines: string[] = [];
@@ -1142,7 +1152,7 @@ function whisperSegmentsToSubtitles(segments: WhisperSegment[], isVertical: bool
         result.push({
           text: lines[j],
           start: seg.start + j * lineDur,
-          end: seg.start + (j + 1) * lineDur,
+          end: seg.start + (j + 1) * lineDur - gap,
         });
       }
     }
@@ -1159,14 +1169,17 @@ async function composeSectionVideo(
   narrationText: string,
   whisperSegments?: WhisperSegment[],
   logoPath?: string,
+  sectionIndex: number = 0,
 ): Promise<void> {
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
+  const fps = 2;
+  const totalFrames = Math.ceil(totalDur * fps);
 
   const imgStat = fs.statSync(imagePath);
   const audioStat = fs.statSync(audioPath);
-  console.log(`[composeSectionVideo] image=${imagePath} (${Math.round(imgStat.size/1024)}KB), audio=${audioPath} (${Math.round(audioStat.size/1024)}KB), dur=${audioDuration}s, ${width}x${height}`);
+  console.log(`[composeSectionVideo] image=${imagePath} (${Math.round(imgStat.size/1024)}KB), audio=${audioPath} (${Math.round(audioStat.size/1024)}KB), dur=${audioDuration}s, ${width}x${height}, kenBurns@${fps}fps`);
 
   const subtitles = whisperSegments && whisperSegments.length > 0
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
@@ -1184,21 +1197,64 @@ async function composeSectionVideo(
     scaledImgPath,
   ], 60000);
 
-  console.log(`[composeSectionVideo] 스케일 완료, 직접 인코딩 시작 (${Math.ceil(totalDur)}프레임@1fps)`);
+  const zoomInc = (0.1 / Math.max(totalFrames, 1)).toFixed(6);
+  const effectType = sectionIndex % 3;
+  let zoomExpr: string;
+  let xExpr: string;
+  let yExpr: string;
 
-  await runFFmpeg([
-    "-y",
-    "-loop", "1", "-i", scaledImgPath,
-    "-i", audioPath,
-    "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-    "-crf", "30", "-r", "1", "-g", "10",
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac", "-b:a", "128k",
-    "-t", String(totalDur),
-    "-shortest",
-    "-movflags", "+faststart",
-    outputPath,
-  ], 300000);
+  if (effectType === 0) {
+    zoomExpr = `min(1.0+${zoomInc}*on,1.1)`;
+    xExpr = "iw/2-(iw/zoom/2)";
+    yExpr = "ih/2-(ih/zoom/2)";
+  } else if (effectType === 1) {
+    zoomExpr = `max(1.1-${zoomInc}*on,1.0)`;
+    xExpr = "iw/2-(iw/zoom/2)";
+    yExpr = "ih/2-(ih/zoom/2)";
+  } else {
+    zoomExpr = "1.08";
+    const panPx = (0.08 * width / Math.max(totalFrames, 1)).toFixed(4);
+    xExpr = `${panPx}*on`;
+    yExpr = "ih/2-(ih/zoom/2)";
+  }
+
+  const zpFilter = `zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${width}x${height}:fps=${fps}`;
+
+  const hasLogo = logoPath && fs.existsSync(logoPath);
+  const logoW = isVertical ? 250 : 300;
+
+  console.log(`[composeSectionVideo] Ken Burns 효과 적용 (type=${effectType}, frames=${totalFrames}, logo=${!!hasLogo})`);
+
+  if (hasLogo) {
+    await runFFmpeg([
+      "-y",
+      "-i", scaledImgPath,
+      "-i", logoPath!,
+      "-i", audioPath,
+      "-filter_complex",
+      `[0:v]${zpFilter},format=yuv420p[zp];[1:v]scale=${logoW}:-1:flags=lanczos[logo];[zp][logo]overlay=W-w-20:20[out]`,
+      "-map", "[out]", "-map", "2:a",
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "128k",
+      "-t", String(totalDur),
+      "-shortest", "-movflags", "+faststart",
+      outputPath,
+    ], 300000);
+  } else {
+    await runFFmpeg([
+      "-y",
+      "-i", scaledImgPath,
+      "-i", audioPath,
+      "-vf", `${zpFilter},format=yuv420p`,
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "128k",
+      "-t", String(totalDur),
+      "-shortest", "-movflags", "+faststart",
+      outputPath,
+    ], 300000);
+  }
 
   try { fs.unlinkSync(scaledImgPath); } catch {}
 }
@@ -1357,7 +1413,7 @@ async function createSubscribeSectionVideo(
   openaiKey: string,
   openaiBaseUrl: string = "https://api.openai.com/v1",
   logoPath?: string,
-  voiceId: string = "pNInz6obpgDQGcFmaJgB",
+  voiceId: string = "XrExE9yKIg1WjnnlVkGX",
 ): Promise<string> {
   const subscribeImgPath = path.join(projectDir, "subscribe_img.png");
   const subscribeAudioPath = path.join(projectDir, "subscribe_audio.mp3");
@@ -1451,7 +1507,7 @@ async function concatenateVideos(
           "-i", listPath,
           "-vf", `subtitles='${safeSrtPath}':fontsdir='${safeFontDir}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=${marginV}'`,
           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-          "-r", "1", "-pix_fmt", "yuv420p",
+          "-r", "2", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "128k",
           "-movflags", "+faststart",
           outputPath,
@@ -1582,7 +1638,7 @@ export async function generateVideo(
     }).where(eq(projects.id, projectId));
 
     const sectionVideos: string[] = [];
-    const insertSubscribeAfter = !isVertical ? Math.floor(script.sections.length / 2) - 1 : -1;
+    const insertSubscribeAfter = Math.floor(script.sections.length / 2) - 1;
     const pexelsKey = settingsMap.PEXELS_API_KEY || process.env.PEXELS_API_KEY || "";
     const usePexelsFirst = !!pexelsKey;
 
@@ -1657,7 +1713,7 @@ export async function generateVideo(
         if (sectionImagePaths.length > 1) {
           await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
         } else {
-          await composeSectionVideo(sectionImagePaths[0], audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath);
+          await composeSectionVideo(sectionImagePaths[0], audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath, i);
         }
         console.log(`섹션 ${i + 1} 영상 합성 완료`);
       } catch (composeErr: any) {
