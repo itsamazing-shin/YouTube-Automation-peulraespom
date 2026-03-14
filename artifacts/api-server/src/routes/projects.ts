@@ -545,9 +545,22 @@ router.get("/projects/:id/video", async (req, res): Promise<void> => {
 router.get("/projects/:id/thumbnail-file", async (req, res): Promise<void> => {
   try {
     const projectId = parseInt(req.params.id);
-    const storagePath = `videos/project_${projectId}/thumbnail_${projectId}.png`;
-    const localPath = path.join(OUTPUT_DIR, `project_${projectId}`, `thumbnail_${projectId}.png`);
-    await serveProjectFile(res, req, storagePath, localPath, "image/png");
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+
+    let storagePath = `videos/project_${projectId}/thumbnail_${projectId}.png`;
+    let localPath = path.join(OUTPUT_DIR, `project_${projectId}`, `thumbnail_${projectId}.png`);
+    let contentType = "image/png";
+
+    if (project?.thumbnailUrl) {
+      const urlPath = project.thumbnailUrl.replace(/^\/storage\//, "");
+      const ext = path.extname(urlPath).toLowerCase();
+      if (ext === ".jpg" || ext === ".jpeg") contentType = "image/jpeg";
+      else if (ext === ".webp") contentType = "image/webp";
+      storagePath = urlPath;
+      localPath = path.join(OUTPUT_DIR, `project_${projectId}`, path.basename(urlPath));
+    }
+
+    await serveProjectFile(res, req, storagePath, localPath, contentType);
   } catch (err: any) {
     if (!res.headersSent) res.status(500).json({ error: "썸네일 파일 제공 실패" });
   }
