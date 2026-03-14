@@ -1029,33 +1029,20 @@ async function composeMultiImageSectionVideo(
   const listPath = outputPath.replace(".mp4", "_cliplist.txt");
   fs.writeFileSync(listPath, clipPaths.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"));
 
-  const safeSrtPath = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-  const hasSubs = subtitles.length > 0 && fs.existsSync(srtPath);
-
-  const concatArgs = [
+  await runFFmpeg([
     "-y", "-f", "concat", "-safe", "0",
     "-i", listPath,
     "-i", audioPath,
-  ];
-  if (hasSubs) {
-    concatArgs.push("-vf", `subtitles='${safeSrtPath}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=40'`);
-    concatArgs.push("-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "-r", "1", "-pix_fmt", "yuv420p");
-  } else {
-    concatArgs.push("-c:v", "copy");
-  }
-  concatArgs.push(
+    "-c:v", "copy",
     "-c:a", "aac", "-b:a", "128k",
     "-t", String(totalDur),
     "-shortest",
     "-movflags", "+faststart",
     outputPath,
-  );
-
-  await runFFmpeg(concatArgs, 300000);
+  ], 300000);
 
   for (const cp of clipPaths) { try { fs.unlinkSync(cp); } catch {} }
   try { fs.unlinkSync(listPath); } catch {}
-  try { fs.unlinkSync(srtPath); } catch {}
 }
 
 function sanitizeForFFmpeg(text: string): string {
@@ -1199,21 +1186,10 @@ async function composeSectionVideo(
 
   console.log(`[composeSectionVideo] 스케일 완료, 직접 인코딩 시작 (${Math.ceil(totalDur)}프레임@1fps)`);
 
-  const safeSrtPath = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-  const hasSubs = subtitles.length > 0 && fs.existsSync(srtPath);
-  const vfFilter = hasSubs
-    ? `subtitles='${safeSrtPath}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=40'`
-    : null;
-
-  const ffArgs = [
+  await runFFmpeg([
     "-y",
     "-loop", "1", "-i", scaledImgPath,
     "-i", audioPath,
-  ];
-  if (vfFilter) {
-    ffArgs.push("-vf", vfFilter);
-  }
-  ffArgs.push(
     "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
     "-crf", "30", "-r", "1", "-g", "10",
     "-pix_fmt", "yuv420p",
@@ -1222,12 +1198,9 @@ async function composeSectionVideo(
     "-shortest",
     "-movflags", "+faststart",
     outputPath,
-  );
-
-  await runFFmpeg(ffArgs, 300000);
+  ], 300000);
 
   try { fs.unlinkSync(scaledImgPath); } catch {}
-  try { fs.unlinkSync(srtPath); } catch {}
 }
 
 async function overlayTextOnImage(
@@ -1409,25 +1382,100 @@ async function createSubscribeSectionVideo(
   return subscribeVideoPath;
 }
 
+async function mergeSectionSRTs(videoPaths: string[]): Promise<string | null> {
+  const allSubs: Array<{ text: string; start: number; end: number }> = [];
+  let timeOffset = 0;
+
+  for (const vp of videoPaths) {
+    const srtPath = vp.replace(".mp4", ".srt");
+    if (!fs.existsSync(srtPath)) {
+      const dur = await getAudioDuration(vp).catch(() => 5);
+      timeOffset += dur;
+      continue;
+    }
+
+    const srtContent = fs.readFileSync(srtPath, "utf-8");
+    const blocks = srtContent.trim().split(/\n\n+/);
+    for (const block of blocks) {
+      const lines = block.split("\n");
+      if (lines.length < 3) continue;
+      const timeLine = lines[1];
+      const timeMatch = timeLine.match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/);
+      if (!timeMatch) continue;
+      const startSec = +timeMatch[1]*3600 + +timeMatch[2]*60 + +timeMatch[3] + +timeMatch[4]/1000;
+      const endSec = +timeMatch[5]*3600 + +timeMatch[6]*60 + +timeMatch[7] + +timeMatch[8]/1000;
+      const text = lines.slice(2).join("\n");
+      allSubs.push({ text, start: startSec + timeOffset, end: endSec + timeOffset });
+    }
+
+    const dur = await getAudioDuration(vp).catch(() => {
+      const lastSub = allSubs[allSubs.length - 1];
+      return lastSub ? lastSub.end - timeOffset + 1 : 5;
+    });
+    timeOffset += dur;
+  }
+
+  if (allSubs.length === 0) return null;
+  return subtitlesToSRT(allSubs);
+}
+
 async function concatenateVideos(
   videoPaths: string[],
   outputPath: string,
+  isVertical: boolean,
 ): Promise<void> {
   const listPath = outputPath.replace(".mp4", "_list.txt");
   const listContent = videoPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n");
   fs.writeFileSync(listPath, listContent);
 
+  const mergedSrtContent = await mergeSectionSRTs(videoPaths);
+  const mergedSrtPath = outputPath.replace(".mp4", "_merged.srt");
+  if (mergedSrtContent) {
+    fs.writeFileSync(mergedSrtPath, mergedSrtContent);
+  }
+
   try {
-    await runFFmpeg([
-      "-y", "-f", "concat", "-safe", "0",
-      "-i", listPath,
-      "-c:v", "copy",
-      "-c:a", "aac", "-b:a", "128k",
-      "-movflags", "+faststart",
-      outputPath,
-    ], 600000);
+    const hasSrt = mergedSrtContent && fs.existsSync(mergedSrtPath);
+
+    if (hasSrt) {
+      const safeSrtPath = mergedSrtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+      const fontSize = isVertical ? 18 : 22;
+      const marginV = isVertical ? 60 : 40;
+      try {
+        await runFFmpeg([
+          "-y", "-f", "concat", "-safe", "0",
+          "-i", listPath,
+          "-vf", `subtitles='${safeSrtPath}':force_style='FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=${marginV}'`,
+          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+          "-r", "1", "-pix_fmt", "yuv420p",
+          "-c:a", "aac", "-b:a", "128k",
+          "-movflags", "+faststart",
+          outputPath,
+        ], 900000);
+      } catch (subErr: any) {
+        console.warn("[concatenateVideos] 자막 번인 실패, 자막 없이 합성:", subErr.message);
+        await runFFmpeg([
+          "-y", "-f", "concat", "-safe", "0",
+          "-i", listPath,
+          "-c:v", "copy",
+          "-c:a", "aac", "-b:a", "128k",
+          "-movflags", "+faststart",
+          outputPath,
+        ], 600000);
+      }
+    } else {
+      await runFFmpeg([
+        "-y", "-f", "concat", "-safe", "0",
+        "-i", listPath,
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        outputPath,
+      ], 600000);
+    }
   } finally {
     if (fs.existsSync(listPath)) fs.unlinkSync(listPath);
+    if (fs.existsSync(mergedSrtPath)) fs.unlinkSync(mergedSrtPath);
   }
 }
 
@@ -1630,7 +1678,7 @@ export async function generateVideo(
 
     await updateProgress(projectId, 88, "섹션 합치는 중...");
     const finalPath = path.join(projectDir, `final_${projectId}.mp4`);
-    await concatenateVideos(sectionVideos, finalPath);
+    await concatenateVideos(sectionVideos, finalPath, isVertical);
 
     await updateProgress(projectId, 95, "썸네일 생성 중...");
     const thumbPath = path.join(projectDir, `thumbnail_${projectId}.png`);
