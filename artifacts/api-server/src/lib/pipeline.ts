@@ -7,6 +7,35 @@ import path from "path";
 import { spawn } from "child_process";
 import { objectStorageClient } from "./objectStorage";
 
+function createMinimalPNG(width: number, height: number, r = 26, g = 26, b = 46): Buffer {
+  function crc32(buf: Buffer): number {
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) {
+      c ^= buf[i];
+      for (let j = 0; j < 8; j++) c = (c >>> 1) ^ (c & 1 ? 0xEDB88320 : 0);
+    }
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function chunk(type: string, data: Buffer): Buffer {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const t = Buffer.from(type);
+    const crcBuf = Buffer.alloc(4); crcBuf.writeUInt32BE(crc32(Buffer.concat([t, data])));
+    return Buffer.concat([len, t, data, crcBuf]);
+  }
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  const rawRow = Buffer.alloc(1 + width * 3);
+  rawRow[0] = 0;
+  for (let x = 0; x < width; x++) { rawRow[1 + x * 3] = r; rawRow[2 + x * 3] = g; rawRow[3 + x * 3] = b; }
+  const raw = Buffer.concat(Array(height).fill(rawRow));
+  const { deflateSync } = require("zlib");
+  const compressed = deflateSync(raw);
+  const iend = Buffer.alloc(0);
+  return Buffer.concat([sig, chunk("IHDR", ihdr), chunk("IDAT", compressed), chunk("IEND", iend)]);
+}
+
 async function uploadToObjectStorage(localFilePath: string, storagePath: string): Promise<string> {
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
   if (!bucketId) {
@@ -1114,9 +1143,13 @@ async function fetchPexelsImages(
         const imgRes = await fetch(imgUrl);
         if (imgRes.ok) {
           const buf = Buffer.from(await imgRes.arrayBuffer());
-          const outPath = path.join(outputDir, `${prefix}_pexels_${i}.jpg`);
-          fs.writeFileSync(outPath, buf);
-          downloaded.push(outPath);
+          if (buf.length > 1000) {
+            const outPath = path.join(outputDir, `${prefix}_pexels_${i}.jpg`);
+            fs.writeFileSync(outPath, buf);
+            downloaded.push(outPath);
+          } else {
+            console.warn(`Pexels image too small (${buf.length} bytes), skipping`);
+          }
         }
       } catch (e) {
         console.warn(`Pexels image download failed:`, e);
@@ -2013,14 +2046,45 @@ export async function generateVideo(
             ctx.fillText(`섹션 ${i + 1}`, w / 2, h / 2);
             fs.writeFileSync(imagePath, cvs.toBuffer("image/png"));
           } else {
-            const placeholderBuf = Buffer.alloc(100, 0);
-            fs.writeFileSync(imagePath, placeholderBuf);
+            const w = isVertical ? 1080 : 1920;
+            const h = isVertical ? 1920 : 1080;
+            fs.writeFileSync(imagePath, createMinimalPNG(w, h));
           }
           sectionImagePaths = [imagePath];
         }
       }
 
       await updateProgress(projectId, Math.round(pctBase + 20), `섹션 ${i + 1}/${script.sections.length}: 영상 합성 중...`);
+
+      const validatedPaths: string[] = [];
+      for (const imgPath of sectionImagePaths) {
+        try {
+          const stat = fs.statSync(imgPath);
+          if (stat.size < 100) {
+            console.warn(`이미지 파일 너무 작음 (${stat.size}B), 교체: ${imgPath}`);
+          } else {
+            const header = Buffer.alloc(8);
+            const fd = fs.openSync(imgPath, "r");
+            fs.readSync(fd, header, 0, 8, 0);
+            fs.closeSync(fd);
+            const isPNG = header[0] === 137 && header[1] === 80 && header[2] === 78 && header[3] === 71;
+            const isJPEG = header[0] === 0xFF && header[1] === 0xD8;
+            if (isPNG || isJPEG) {
+              validatedPaths.push(imgPath);
+              continue;
+            }
+            console.warn(`유효하지 않은 이미지 형식, 교체: ${imgPath}`);
+          }
+        } catch (e) {
+          console.warn(`이미지 파일 읽기 실패, 교체: ${imgPath}`);
+        }
+        const fallbackW = isVertical ? 1080 : 1920;
+        const fallbackH = isVertical ? 1920 : 1080;
+        fs.writeFileSync(imgPath, createMinimalPNG(fallbackW, fallbackH));
+        validatedPaths.push(imgPath);
+      }
+      sectionImagePaths = validatedPaths;
+
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
       try {
         console.log(`섹션 ${i + 1} 영상 합성 시작 (duration: ${audioDuration}s, images: ${sectionImagePaths.length})`);
