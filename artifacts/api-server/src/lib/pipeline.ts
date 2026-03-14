@@ -421,13 +421,15 @@ async function generateScript(
 ): Promise<VideoScript> {
   const isShorts = videoType === "shorts";
 
-  const sectionCount = isShorts ? 3 : duration === "1min" ? 8 : duration === "5min" ? 20 : duration === "10min" ? 40 : 55;
+  const sectionCount = isShorts ? 3 : duration === "1min" ? 4 : duration === "5min" ? 12 : duration === "10min" ? 22 : 30;
 
   const narrationGuide = isShorts
     ? "반드시 2~3문장, 총 50~80자. 짧고 임팩트 있게."
-    : "반드시 2~4문장, 총 40~80자. 하나의 핵심 포인트만 전달. 짧고 임팩트 있는 문장으로 시청자의 집중력을 유지.";
+    : duration === "1min"
+    ? "반드시 3~4문장, 총 80~120자. 핵심 포인트를 간결하게 전달."
+    : "반드시 4~6문장, 총 120~180자. 구체적 사례나 수치를 포함하여 풍부하게 서술. 시청자가 깊이 이해할 수 있도록 배경 설명과 분석을 넣으세요.";
 
-  const targetDurationPerSection = isShorts ? 15 : duration === "1min" ? 8 : duration === "5min" ? 15 : duration === "10min" ? 20 : 22;
+  const targetDurationPerSection = isShorts ? 15 : duration === "1min" ? 15 : duration === "5min" ? 25 : duration === "10min" ? 28 : 30;
 
   const toneMap: Record<string, string> = {
     calm: "차분하고 설득력 있는 톤으로, 시청자가 깊이 생각하게 만드는",
