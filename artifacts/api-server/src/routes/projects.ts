@@ -104,8 +104,12 @@ router.post("/projects/:id/generate", async (req, res): Promise<void> => {
     if (!settingsMap.OPENAI_API_KEY) {
       res.status(400).json({ error: "OpenAI API 키가 설정되지 않았습니다. Settings에서 등록해주세요." }); return;
     }
-    if (!settingsMap.ELEVENLABS_API_KEY) {
+    const ttsEngine = settingsMap.TTS_ENGINE || "elevenlabs";
+    if (ttsEngine === "elevenlabs" && !settingsMap.ELEVENLABS_API_KEY) {
       res.status(400).json({ error: "ElevenLabs API 키가 설정되지 않았습니다. Settings에서 등록해주세요." }); return;
+    }
+    if (ttsEngine === "gemini" && !settingsMap.GEMINI_API_KEY) {
+      res.status(400).json({ error: "Gemini API 키가 설정되지 않았습니다. Settings에서 등록해주세요." }); return;
     }
 
     if (!settingsMap.OPENAI_BASE_URL) {

@@ -5,8 +5,8 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
-const ALLOWED_KEYS = new Set(["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "XAI_API_KEY", "PEXELS_API_KEY", "YOUTUBE_API_KEY", "ELEVENLABS_VOICE_ID", "CHANNEL_NAME"]);
-const NON_SECRET_KEYS = new Set(["ELEVENLABS_VOICE_ID", "CHANNEL_NAME"]);
+const ALLOWED_KEYS = new Set(["OPENAI_API_KEY", "ELEVENLABS_API_KEY", "XAI_API_KEY", "PEXELS_API_KEY", "YOUTUBE_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_VOICE_ID", "CHANNEL_NAME", "TTS_ENGINE"]);
+const NON_SECRET_KEYS = new Set(["ELEVENLABS_VOICE_ID", "CHANNEL_NAME", "TTS_ENGINE"]);
 
 function maskApiKey(value: string): string {
   if (!value || value.length < 8) return "••••••••";

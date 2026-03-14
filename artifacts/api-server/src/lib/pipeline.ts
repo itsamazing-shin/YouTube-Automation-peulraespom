@@ -725,7 +725,7 @@ ${narrationGuide}
   return script;
 }
 
-async function generateTTSWithGoogleFallback(
+async function generateTTSWithGoogleTranslate(
   text: string,
   outputPath: string,
 ): Promise<void> {
@@ -734,7 +734,77 @@ async function generateTTSWithGoogleFallback(
   const buffers = results.map((r: any) => Buffer.from(r.base64, "base64"));
   const combined = Buffer.concat(buffers);
   fs.writeFileSync(outputPath, combined);
-  console.log(`[Google TTS] 생성 완료: ${path.basename(outputPath)}`);
+  console.log(`[Google Translate TTS] 생성 완료: ${path.basename(outputPath)}`);
+}
+
+async function generateTTSWithGemini(
+  text: string,
+  outputPath: string,
+  geminiApiKey: string,
+  voiceName: string = "Kore",
+): Promise<void> {
+  const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
+
+  const body = {
+    contents: [{
+      role: "user",
+      parts: [{ text }],
+    }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName },
+        },
+      },
+    },
+  };
+
+  const response = await fetch(ttsUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Gemini TTS error: ${response.status} - ${err.substring(0, 200)}`);
+  }
+
+  const data = await response.json() as any;
+  const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+  if (!inlineData?.data) {
+    throw new Error("Gemini TTS: 오디오 데이터가 없습니다.");
+  }
+
+  const audioBuf = Buffer.from(inlineData.data, "base64");
+  const wavPath = outputPath.replace(/\.mp3$/, ".wav");
+  fs.writeFileSync(wavPath, audioBuf);
+
+  await runFFmpeg(["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-q:a", "2", outputPath]);
+  if (fs.existsSync(wavPath) && wavPath !== outputPath) fs.unlinkSync(wavPath);
+  console.log(`[Gemini TTS] 생성 완료 (${voiceName}): ${path.basename(outputPath)}`);
+}
+
+async function tryElevenLabs(text: string, outputPath: string, apiKey: string, voiceId: string): Promise<void> {
+  const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "xi-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      text,
+      model_id: "eleven_multilingual_v2",
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`ElevenLabs ${response.status}: ${err}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(outputPath, buffer);
 }
 
 async function generateTTS(
@@ -742,47 +812,55 @@ async function generateTTS(
   outputPath: string,
   apiKey: string,
   voiceId: string = "XrExE9yKIg1WjnnlVkGX",
+  settingsMap?: Record<string, string>,
 ): Promise<void> {
-  if (!apiKey || apiKey.trim() === "") {
-    console.log("[TTS] ElevenLabs 키 없음, Google TTS 사용");
-    return generateTTSWithGoogleFallback(text, outputPath);
+  const ttsEngine = settingsMap?.TTS_ENGINE || "elevenlabs";
+  const geminiKey = settingsMap?.GEMINI_API_KEY || "";
+
+  if (ttsEngine === "google") {
+    return generateTTSWithGoogleTranslate(text, outputPath);
   }
 
-  try {
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "xi-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
-        },
-      }),
+  const engines: Array<() => Promise<void>> = [];
+
+  if (ttsEngine === "gemini" && geminiKey) {
+    engines.push(async () => {
+      console.log("[TTS] Gemini TTS 시도...");
+      await generateTTSWithGemini(text, outputPath, geminiKey);
     });
-
-    if (!response.ok) {
-      const err = await response.text();
-      const isQuotaOrAuth = response.status === 401 || response.status === 402 || response.status === 429;
-      if (isQuotaOrAuth) {
-        console.warn(`[TTS] ElevenLabs 실패 (${response.status}), Google TTS로 폴백`);
-        return generateTTSWithGoogleFallback(text, outputPath);
-      }
-      throw new Error(`ElevenLabs API error: ${response.status} - ${err}`);
+    if (apiKey && apiKey.trim() !== "") {
+      engines.push(async () => {
+        console.log("[TTS] ElevenLabs 폴백 시도...");
+        await tryElevenLabs(text, outputPath, apiKey, voiceId);
+      });
     }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(outputPath, buffer);
-  } catch (error: any) {
-    if (error.message?.includes("ElevenLabs API error")) {
-      console.warn(`[TTS] ElevenLabs 에러, Google TTS로 폴백: ${error.message}`);
-      return generateTTSWithGoogleFallback(text, outputPath);
+  } else if (ttsEngine === "elevenlabs") {
+    if (apiKey && apiKey.trim() !== "") {
+      engines.push(async () => {
+        console.log("[TTS] ElevenLabs 시도...");
+        await tryElevenLabs(text, outputPath, apiKey, voiceId);
+      });
     }
-    throw error;
+    if (geminiKey) {
+      engines.push(async () => {
+        console.log("[TTS] Gemini TTS 폴백 시도...");
+        await generateTTSWithGemini(text, outputPath, geminiKey);
+      });
+    }
+  }
+
+  engines.push(async () => {
+    console.log("[TTS] Google Translate TTS 사용 (최종 폴백)");
+    await generateTTSWithGoogleTranslate(text, outputPath);
+  });
+
+  for (const engine of engines) {
+    try {
+      await engine();
+      return;
+    } catch (e: any) {
+      console.warn(`[TTS] 엔진 실패, 다음 시도: ${e.message}`);
+    }
   }
 }
 
@@ -1482,13 +1560,14 @@ async function createSubscribeSectionVideo(
   openaiBaseUrl: string = "https://api.openai.com/v1",
   logoPath?: string,
   voiceId: string = "XrExE9yKIg1WjnnlVkGX",
+  settingsMap?: Record<string, string>,
 ): Promise<string> {
   const subscribeImgPath = path.join(projectDir, "subscribe_img.png");
   const subscribeAudioPath = path.join(projectDir, "subscribe_audio.mp3");
   const subscribeVideoPath = path.join(projectDir, "subscribe_section.mp4");
 
   await createSubscribeImage(subscribeImgPath, isVertical, openaiKey, openaiBaseUrl);
-  await generateTTS(SUBSCRIBE_NARRATION, subscribeAudioPath, elevenlabsKey, voiceId);
+  await generateTTS(SUBSCRIBE_NARRATION, subscribeAudioPath, elevenlabsKey, voiceId, settingsMap);
 
   const audioDuration = await getAudioDuration(subscribeAudioPath);
 
@@ -1728,7 +1807,7 @@ export async function generateVideo(
       try {
         const introNarration = `안녕하세요, 여러분! '${channelName}'입니다. 오늘 정말 중요한 이야기를 준비했습니다. 끝까지 함께 해주세요!`;
         const introAudioPath = path.join(projectDir, "audio_intro.mp3");
-        await generateTTS(introNarration, introAudioPath, elevenlabsKey, elevenlabsVoiceId);
+        await generateTTS(introNarration, introAudioPath, elevenlabsKey, elevenlabsVoiceId, settingsMap);
         const introDuration = await getAudioDuration(introAudioPath);
 
         const introImgPath = path.join(projectDir, "intro_img.png");
@@ -1801,7 +1880,7 @@ export async function generateVideo(
 
       await updateProgress(projectId, Math.round(pctBase), `섹션 ${i + 1}/${script.sections.length}: TTS 생성 중...`);
       const audioPath = path.join(projectDir, `audio_${i}.mp3`);
-      await generateTTS(section.narration, audioPath, elevenlabsKey, elevenlabsVoiceId);
+      await generateTTS(section.narration, audioPath, elevenlabsKey, elevenlabsVoiceId, settingsMap);
 
       const audioDuration = await getAudioDuration(audioPath);
 
@@ -1880,7 +1959,7 @@ export async function generateVideo(
       if (i === insertSubscribeAfter) {
         await updateProgress(projectId, Math.round(pctBase + 25), "구독 유도 섹션 생성 중...");
         try {
-          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl, videoLogoPath, elevenlabsVoiceId);
+          const subscribeVideoPath = await createSubscribeSectionVideo(projectDir, isVertical, elevenlabsKey, openaiKey, openaiBaseUrl, videoLogoPath, elevenlabsVoiceId, settingsMap);
           sectionVideos.push(subscribeVideoPath);
           console.log("구독 유도 섹션 삽입 완료");
         } catch (subErr: any) {

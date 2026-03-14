@@ -15,7 +15,7 @@ YouTube Video Automation Dashboard (VideoForge) — pnpm workspace monorepo usin
 - **Frontend**: React + Vite + Shadcn UI + TanStack Query + Wouter
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **Video**: FFmpeg (Ken Burns zoompan@2fps, 한글 자막 번인, 로고 오버레이, concatenation)
-- **AI APIs**: Gemini 3.1 Pro Preview (대본 생성, 실시간 Google 검색 grounding), OpenAI (GPT-4o 폴백 + gpt-image-1 썸네일), ElevenLabs TTS (Google TTS 자동 폴백), Pexels (스톡 이미지), xAI Grok (뉴스 검색 보조)
+- **AI APIs**: Gemini 3.1 Pro Preview (대본 생성, 실시간 Google 검색 grounding), OpenAI (GPT-4o 폴백 + gpt-image-1 썸네일), TTS 3-engine system (Gemini TTS / ElevenLabs / Google Translate — user-selectable with auto-fallback), Pexels (스톡 이미지), xAI Grok (뉴스 검색 보조)
 
 ## Structure
 
@@ -64,7 +64,7 @@ artifacts-monorepo/
 ## Video Generation Pipeline
 
 1. **Script Generation** (GPT-4o): Topic → structured JSON script with sections, dynamic narration length per duration
-2. **TTS** (ElevenLabs): Per-section narration audio generation
+2. **TTS** (3-engine): User-selectable engine (Gemini TTS / ElevenLabs / Google Translate) with auto-fallback chain. Setting: `TTS_ENGINE` in DB.
 3. **Subtitle Timing** (Whisper): Accurate speech-to-text timing via OpenAI Whisper
 4. **Image Generation** (gpt-image-1): Per-section scene images; for cinematic style, supplemented with Pexels stock images
 5. **Pexels Integration** (cinematic only): GPT-4o-mini extracts keywords → Pexels API fetches 1-2 supplementary images per section → multi-image composition with Ken Burns

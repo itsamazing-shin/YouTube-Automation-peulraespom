@@ -42,11 +42,19 @@ const API_KEYS: ApiKeyConfig[] = [
     docsUrl: "https://platform.openai.com/api-keys",
   },
   {
+    key: "GEMINI_API_KEY",
+    label: "Google AI Studio (Gemini) API 키",
+    description: "Gemini TTS 자연스러운 음성 생성 (무료)",
+    placeholder: "AIza...",
+    required: false,
+    docsUrl: "https://aistudio.google.com/apikey",
+  },
+  {
     key: "ELEVENLABS_API_KEY",
     label: "ElevenLabs API 키",
-    description: "TTS 나레이션 음성 생성",
+    description: "TTS 나레이션 음성 생성 (유료)",
     placeholder: "sk_...",
-    required: true,
+    required: false,
     docsUrl: "https://elevenlabs.io",
   },
   {
@@ -225,11 +233,44 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="voice" className="space-y-4 mt-4">
-          <VoiceSelector
-            selectedVoiceId={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "XrExE9yKIg1WjnnlVkGX"}
-            onSelect={(id) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: id }))}
-            hasApiKey={savedKeys.has("ELEVENLABS_API_KEY")}
-          />
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">TTS 엔진 선택</CardTitle>
+              <CardDescription>영상 나레이션에 사용할 음성 엔진을 선택하세요.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {[
+                { value: "gemini", label: "Gemini TTS (권장)", desc: "자연스러운 AI 음성, Google AI Studio 키 필요 (무료)" },
+                { value: "elevenlabs", label: "ElevenLabs", desc: "프리미엄 음성, ElevenLabs 키 필요 (유료)" },
+                { value: "google", label: "Google 번역 TTS", desc: "기본 음성, API 키 불필요 (무료)" },
+              ].map(engine => {
+                const currentEngine = values["TTS_ENGINE"] || settings.find(s => s.key === "TTS_ENGINE")?.value || "elevenlabs";
+                return (
+                  <div
+                    key={engine.value}
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${currentEngine === engine.value ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
+                    onClick={() => setValues(prev => ({ ...prev, TTS_ENGINE: engine.value }))}
+                  >
+                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${currentEngine === engine.value ? "border-primary" : "border-muted-foreground"}`}>
+                      {currentEngine === engine.value && <div className="w-2 h-2 rounded-full bg-primary" />}
+                    </div>
+                    <div>
+                      <div className="font-medium text-sm">{engine.label}</div>
+                      <div className="text-xs text-muted-foreground">{engine.desc}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          {(values["TTS_ENGINE"] || settings.find(s => s.key === "TTS_ENGINE")?.value || "elevenlabs") === "elevenlabs" && (
+            <VoiceSelector
+              selectedVoiceId={values["ELEVENLABS_VOICE_ID"] || settings.find(s => s.key === "ELEVENLABS_VOICE_ID")?.value || "XrExE9yKIg1WjnnlVkGX"}
+              onSelect={(id) => setValues((prev) => ({ ...prev, ELEVENLABS_VOICE_ID: id }))}
+              hasApiKey={savedKeys.has("ELEVENLABS_API_KEY")}
+            />
+          )}
 
           <Button
             className="w-full"
