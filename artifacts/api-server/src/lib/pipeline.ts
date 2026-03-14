@@ -1882,7 +1882,7 @@ export async function generateVideo(
     if (channelName) {
       await updateProgress(projectId, 14, "인트로 나레이션 생성 중...");
       try {
-        const introNarration = `안녕하세요, 여러분! '${channelName}'입니다. 오늘 정말 중요한 이야기를 준비했습니다. 끝까지 함께 해주세요!`;
+        const introNarration = settingsMap.CHANNEL_INTRO || `안녕하세요, 여러분! '${channelName}'입니다. 오늘 정말 중요한 이야기를 준비했습니다. 끝까지 함께 해주세요!`;
         const introAudioPath = path.join(projectDir, "audio_intro.mp3");
         await generateTTS(introNarration, introAudioPath, elevenlabsKey, elevenlabsVoiceId, settingsMap);
         const introDuration = await getAudioDuration(introAudioPath);
@@ -1943,7 +1943,8 @@ export async function generateVideo(
           console.log("인트로 섹션 삽입 완료");
         }
       } catch (e: any) {
-        console.warn("인트로 생성 실패, 건너뜀:", e.message);
+        console.error("인트로 생성 실패, 건너뜀:", e.message, e.stack);
+        await updateProgress(projectId, 14, `인트로 생성 실패: ${e.message.substring(0, 100)}`);
       }
     }
 
@@ -2040,7 +2041,7 @@ export async function generateVideo(
           sectionVideos.push(subscribeVideoPath);
           console.log("구독 유도 섹션 삽입 완료");
         } catch (subErr: any) {
-          console.warn("구독 유도 섹션 생성 실패, 건너뜀:", subErr.message);
+          console.error("구독 유도 섹션 생성 실패, 건너뜀:", subErr.message, subErr.stack);
         }
       }
     }

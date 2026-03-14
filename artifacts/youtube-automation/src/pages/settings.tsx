@@ -290,13 +290,27 @@ export default function Settings() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">채널 이름</CardTitle>
-              <CardDescription>영상 인트로에 사용됩니다. 예: "너만모르는 경제"</CardDescription>
+              <CardDescription>영상 인트로 화면에 표시됩니다. 예: "너만모르는 경제"</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Input
                 placeholder="채널 이름 입력"
                 value={"CHANNEL_NAME" in values ? values["CHANNEL_NAME"] : (settings.find(s => s.key === "CHANNEL_NAME")?.value || "")}
                 onChange={(e) => setValues((prev) => ({ ...prev, CHANNEL_NAME: e.target.value }))}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">인트로 나레이션</CardTitle>
+              <CardDescription>영상 시작 시 읽을 인트로 멘트입니다. 비워두면 기본 인트로가 사용됩니다.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                placeholder="안녕하세요, 꼭 알아야 호구가 안되는 정보만 쏙쏙 알려드리는 '너만모르는 경제학' 입니다."
+                value={"CHANNEL_INTRO" in values ? values["CHANNEL_INTRO"] : (settings.find(s => s.key === "CHANNEL_INTRO")?.value || "")}
+                onChange={(e) => setValues((prev) => ({ ...prev, CHANNEL_INTRO: e.target.value }))}
               />
               <Button
                 onClick={() => saveMutation.mutate()}
@@ -305,7 +319,7 @@ export default function Settings() {
                 className="w-full"
               >
                 {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                채널 이름 저장
+                브랜딩 저장
               </Button>
             </CardContent>
           </Card>
