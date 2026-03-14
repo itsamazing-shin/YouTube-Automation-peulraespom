@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { projects, settings } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { generateVideo, regenerateThumbnail } from "../lib/pipeline";
+import { generateVideo, regenerateThumbnail, recomposeVideo } from "../lib/pipeline";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -254,6 +254,116 @@ router.delete("/logo", async (_req, res) => {
       for (const f of fs.readdirSync(logoDir)) fs.unlinkSync(path.join(logoDir, f));
     }
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const sectionVideoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const projectDir = path.join(OUTPUT_DIR, `project_${req.params.id}`);
+      if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
+      cb(null, projectDir);
+    },
+    filename: (req, _file, cb) => {
+      cb(null, `custom_section_${req.params.sectionIndex}.mp4`);
+    },
+  }),
+  limits: { fileSize: 200 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("video/")) cb(null, true);
+    else cb(new Error("동영상 파일만 업로드 가능합니다."));
+  },
+});
+
+router.post("/projects/:id/section-video/:sectionIndex", sectionVideoUpload.single("video"), async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const sectionIndex = parseInt(req.params.sectionIndex);
+    if (!req.file) return res.status(400).json({ error: "동영상 파일이 필요합니다." });
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." });
+    }
+
+    const script = project.scriptJson as any;
+    if (script?.sections && (sectionIndex < 0 || sectionIndex >= script.sections.length)) {
+      if (req.file) fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "유효하지 않은 섹션 번호입니다." });
+    }
+
+    res.json({ success: true, sectionIndex, filename: req.file.filename });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "섹션 영상 업로드 실패" });
+  }
+});
+
+router.delete("/projects/:id/section-video/:sectionIndex", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const sectionIndex = parseInt(req.params.sectionIndex);
+    const filePath = path.join(OUTPUT_DIR, `project_${projectId}`, `custom_section_${sectionIndex}.mp4`);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/projects/:id/section-videos", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
+    const customSections: Record<number, { filename: string; size: number }> = {};
+
+    if (fs.existsSync(projectDir)) {
+      const files = fs.readdirSync(projectDir).filter(f => f.startsWith("custom_section_") && f.endsWith(".mp4"));
+      for (const f of files) {
+        const match = f.match(/custom_section_(\d+)\.mp4/);
+        if (match) {
+          const stat = fs.statSync(path.join(projectDir, f));
+          customSections[parseInt(match[1])] = { filename: f, size: stat.size };
+        }
+      }
+    }
+
+    res.json(customSections);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/projects/:id/recompose", async (req, res) => {
+  try {
+    const projectId = parseInt(req.params.id);
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) return res.status(404).json({ error: "프로젝트를 찾을 수 없습니다." });
+    if (project.status !== "completed") return res.status(400).json({ error: "완료된 프로젝트만 재합성할 수 있습니다." });
+
+    const allSettings = await db.select().from(settings);
+    const settingsMap: Record<string, string> = {};
+    for (const s of allSettings) settingsMap[s.key] = s.value;
+
+    await db.update(projects).set({
+      status: "generating",
+      progress: 85,
+      progressMessage: "커스텀 영상으로 재합성 중...",
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+
+    res.json({ success: true });
+
+    recomposeVideo(projectId, project, settingsMap).catch((err) => {
+      console.error("Recompose failed:", err);
+      db.update(projects).set({
+        status: "completed",
+        progressMessage: "재합성 실패: " + err.message,
+        updatedAt: new Date(),
+      }).where(eq(projects.id, projectId)).catch(console.error);
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -1638,6 +1638,75 @@ export async function generateVideo(
     }).where(eq(projects.id, projectId));
 
     const sectionVideos: string[] = [];
+    const channelName = settingsMap.CHANNEL_NAME || "";
+    if (channelName) {
+      await updateProgress(projectId, 14, "인트로 나레이션 생성 중...");
+      try {
+        const introNarration = `안녕하세요, 여러분! '${channelName}'입니다. 오늘 정말 중요한 이야기를 준비했습니다. 끝까지 함께 해주세요!`;
+        const introAudioPath = path.join(projectDir, "audio_intro.mp3");
+        await generateTTS(introNarration, introAudioPath, elevenlabsKey, elevenlabsVoiceId);
+        const introDuration = await getAudioDuration(introAudioPath);
+
+        const introImgPath = path.join(projectDir, "intro_img.png");
+        if (videoLogoPath && fs.existsSync(videoLogoPath)) {
+          const { createCanvas, loadImage } = await import("canvas").catch(() => ({ createCanvas: null, loadImage: null }));
+          if (createCanvas && loadImage) {
+            const w = isVertical ? 1080 : 1920;
+            const h = isVertical ? 1920 : 1080;
+            const cvs = createCanvas(w, h);
+            const ctx = cvs.getContext("2d");
+            const gradient = ctx.createLinearGradient(0, 0, w, h);
+            gradient.addColorStop(0, "#0a0a1a");
+            gradient.addColorStop(1, "#1a1a3e");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, w, h);
+            try {
+              const logo = await loadImage(videoLogoPath);
+              const logoSize = isVertical ? 300 : 400;
+              const ratio = Math.min(logoSize / logo.width, logoSize / logo.height);
+              const lw = logo.width * ratio;
+              const lh = logo.height * ratio;
+              ctx.drawImage(logo, w / 2 - lw / 2, h * 0.3 - lh / 2, lw, lh);
+            } catch {}
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = `bold ${isVertical ? 60 : 80}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText(channelName, w / 2, h * 0.6);
+            fs.writeFileSync(introImgPath, cvs.toBuffer("image/png"));
+          }
+        }
+
+        if (!fs.existsSync(introImgPath)) {
+          const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
+          if (createCanvas) {
+            const w = isVertical ? 1080 : 1920;
+            const h = isVertical ? 1920 : 1080;
+            const cvs = createCanvas(w, h);
+            const ctx = cvs.getContext("2d");
+            const gradient = ctx.createLinearGradient(0, 0, w, h);
+            gradient.addColorStop(0, "#0a0a1a");
+            gradient.addColorStop(1, "#1a1a3e");
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.font = `bold ${isVertical ? 60 : 80}px sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText(channelName, w / 2, h / 2);
+            fs.writeFileSync(introImgPath, cvs.toBuffer("image/png"));
+          }
+        }
+
+        if (fs.existsSync(introImgPath)) {
+          const introVideoPath = path.join(projectDir, "section_intro.mp4");
+          await composeSectionVideo(introImgPath, introAudioPath, introVideoPath, introDuration, isVertical, introNarration, undefined, undefined, 0);
+          sectionVideos.push(introVideoPath);
+          console.log("인트로 섹션 삽입 완료");
+        }
+      } catch (e: any) {
+        console.warn("인트로 생성 실패, 건너뜀:", e.message);
+      }
+    }
+
     const insertSubscribeAfter = Math.floor(script.sections.length / 2) - 1;
     const pexelsKey = settingsMap.PEXELS_API_KEY || process.env.PEXELS_API_KEY || "";
     const usePexelsFirst = !!pexelsKey;
@@ -1787,6 +1856,75 @@ export async function generateVideo(
     await db.update(projects).set({
       status: "error",
       errorMessage: koreanError,
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+  }
+}
+
+export async function recomposeVideo(
+  projectId: number,
+  project: any,
+  settingsMap: Record<string, string>,
+): Promise<void> {
+  const projectDir = path.join(OUTPUT_DIR, `project_${projectId}`);
+  const isVertical = project.videoType === "shorts";
+  const script = project.scriptJson as any;
+
+  if (!script?.sections) {
+    throw new Error("대본이 없습니다. 먼저 영상을 생성해주세요.");
+  }
+
+  try {
+    const sectionVideos: string[] = [];
+
+    const introPath = path.join(projectDir, "section_intro.mp4");
+    if (fs.existsSync(introPath)) {
+      sectionVideos.push(introPath);
+    }
+
+    const subscribePath = path.join(projectDir, "subscribe_section.mp4");
+    const insertSubscribeAfter = Math.floor(script.sections.length / 2) - 1;
+
+    for (let i = 0; i < script.sections.length; i++) {
+      const customPath = path.join(projectDir, `custom_section_${i}.mp4`);
+      const originalPath = path.join(projectDir, `section_${i}.mp4`);
+
+      if (fs.existsSync(customPath)) {
+        console.log(`섹션 ${i}: 커스텀 영상 사용`);
+        sectionVideos.push(customPath);
+      } else if (fs.existsSync(originalPath)) {
+        sectionVideos.push(originalPath);
+      } else {
+        console.warn(`섹션 ${i}: 영상 파일 없음, 건너뜀`);
+      }
+
+      if (i === insertSubscribeAfter && fs.existsSync(subscribePath)) {
+        sectionVideos.push(subscribePath);
+      }
+    }
+
+    if (sectionVideos.length === 0) {
+      throw new Error("합성할 섹션 영상이 없습니다.");
+    }
+
+    await updateProgress(projectId, 90, "커스텀 영상으로 재합성 중...");
+    const finalPath = path.join(projectDir, `final_${projectId}.mp4`);
+    await concatenateVideos(sectionVideos, finalPath, isVertical);
+
+    const relativeVideoPath = `/files/project_${projectId}/final_${projectId}.mp4`;
+    await db.update(projects).set({
+      status: "completed",
+      progress: 100,
+      progressMessage: "재합성 완료!",
+      videoUrl: relativeVideoPath,
+      updatedAt: new Date(),
+    }).where(eq(projects.id, projectId));
+
+  } catch (err: any) {
+    console.error("Recompose error:", err);
+    await db.update(projects).set({
+      status: "error",
+      errorMessage: "재합성 실패: " + err.message,
       updatedAt: new Date(),
     }).where(eq(projects.id, projectId));
   }

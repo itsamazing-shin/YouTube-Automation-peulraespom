@@ -246,6 +246,28 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="branding" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">채널 이름</CardTitle>
+              <CardDescription>영상 인트로에 사용됩니다. 예: "너만모르는 경제"</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                placeholder="채널 이름 입력"
+                value={"CHANNEL_NAME" in values ? values["CHANNEL_NAME"] : (settings.find(s => s.key === "CHANNEL_NAME")?.value || "")}
+                onChange={(e) => setValues((prev) => ({ ...prev, CHANNEL_NAME: e.target.value }))}
+              />
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending}
+                size="sm"
+                className="w-full"
+              >
+                {saveMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                채널 이름 저장
+              </Button>
+            </CardContent>
+          </Card>
           <ChannelLogoSection />
         </TabsContent>
       </Tabs>

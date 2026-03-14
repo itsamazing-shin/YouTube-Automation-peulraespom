@@ -53,6 +53,10 @@ artifacts-monorepo/
 - `GET /api/projects/:id` — Get project details
 - `POST /api/projects/:id/generate` — Start video generation
 - `DELETE /api/projects/:id` — Delete project
+- `POST /api/projects/:id/section-video/:idx` — Upload custom MP4 for section
+- `DELETE /api/projects/:id/section-video/:idx` — Remove custom section video
+- `GET /api/projects/:id/section-videos` — List uploaded custom section videos
+- `POST /api/projects/:id/recompose` — Re-merge final MP4 with custom section videos
 - `GET /api/files/*` — Serve generated video/image files
 
 ## Video Generation Pipeline
@@ -79,7 +83,9 @@ artifacts-monorepo/
 - **FFmpeg production constraints**: No drawtext chains (hangs on limited CPU), no zoompan (too slow). Only scale+pad for video, drawtext only for single-image thumbnail. Uses `spawn` instead of `execFile` (buffer overflow prevention).
 - **Font path**: Multi-candidate resolution (`cwd/assets`, `cwd/../assets`, `cwd/../../assets`, absolute fallback) for dev/prod compatibility
 - **Vite proxy**: Frontend proxies /api/* requests to API server (port 8080) for video/file serving
-- **Section counts**: 1min=4, 5min=8, 10min=12, 15min=16 sections (Shorts=3)
+- **Section video replacement**: Users can upload custom MP4 per section and recompose the final video. `recomposeVideo()` collects section files, swaps in custom uploads, re-concatenates
+- **Channel intro**: Auto-generated when `CHANNEL_NAME` setting is set; logo background + "안녕하세요, '채널이름'입니다" TTS
+- **Section counts**: 1min=4, 5min=12, 10min=22, 15min=30 sections (Shorts=3)
 - **Narration length**: Dynamic per duration — 1min: 80-150자, 5min: 200-350자, 10min: 350-500자, 15min: 350-500자
 - **Pexels supplementary images**: Only for cinematic style; other styles (character, infographic, webtoon) use AI images only to avoid style mismatch
 - **Thumbnail upload**: Users can upload custom thumbnails via `/projects/:id/upload-thumbnail`

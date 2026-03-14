@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText, Image, Sparkles, Upload } from "lucide-react";
+import { ArrowLeft, Play, Download, RefreshCw, Loader2, CheckCircle2, AlertCircle, Clock, FileText, Image, Sparkles, Upload, Film, Trash2, RotateCcw } from "lucide-react";
 import { useState, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -381,6 +381,10 @@ export default function ProjectDetail() {
         </Card>
       )}
 
+      {project.status === "completed" && project.scriptJson && (
+        <SectionVideoManager projectId={project.id} sections={(project.scriptJson as any).sections || []} />
+      )}
+
       {(project.status === "draft" || project.status === "error") && (
         <Button
           className="w-full h-12 text-base"
@@ -396,5 +400,167 @@ export default function ProjectDetail() {
         </Button>
       )}
     </div>
+  );
+}
+
+function SectionVideoManager({ projectId, sections }: { projectId: number; sections: any[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [isRecomposing, setIsRecomposing] = useState(false);
+  const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  const { data: customSections = {} } = useQuery<Record<number, { filename: string; size: number }>>({
+    queryKey: ["section-videos", projectId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/section-videos`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const handleUpload = async (idx: number, file: File) => {
+    setUploadingIdx(idx);
+    try {
+      const formData = new FormData();
+      formData.append("video", file);
+      const res = await fetch(`${API_BASE}/projects/${projectId}/section-video/${idx}`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "업로드 실패");
+      }
+      queryClient.invalidateQueries({ queryKey: ["section-videos", projectId] });
+      toast({ title: `섹션 ${idx + 1} 영상 업로드 완료` });
+    } catch (err: any) {
+      toast({ title: "업로드 실패", description: err.message, variant: "destructive" });
+    } finally {
+      setUploadingIdx(null);
+    }
+  };
+
+  const handleDelete = async (idx: number) => {
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/section-video/${idx}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("삭제 실패");
+      queryClient.invalidateQueries({ queryKey: ["section-videos", projectId] });
+      toast({ title: `섹션 ${idx + 1} 커스텀 영상 제거됨` });
+    } catch {
+      toast({ title: "제거 실패", variant: "destructive" });
+    }
+  };
+
+  const handleRecompose = async () => {
+    setIsRecomposing(true);
+    try {
+      const res = await fetch(`${API_BASE}/projects/${projectId}/recompose`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "재합성 실패");
+      }
+      queryClient.invalidateQueries({ queryKey: ["project", String(projectId)] });
+      toast({ title: "재합성 시작", description: "커스텀 영상으로 최종 영상을 다시 만들고 있습니다." });
+    } catch (err: any) {
+      toast({ title: "재합성 실패", description: err.message, variant: "destructive" });
+    } finally {
+      setIsRecomposing(false);
+    }
+  };
+
+  const hasCustomVideos = Object.keys(customSections).length > 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Film className="w-5 h-5" />
+          섹션별 영상 교체
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          특정 섹션에 직접 만든 영상(MP4)을 넣어 교체할 수 있습니다.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {sections.map((_section: any, idx: number) => {
+          const hasCustom = !!customSections[idx];
+          const isUploading = uploadingIdx === idx;
+
+          return (
+            <div key={idx} className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-primary">섹션 {idx + 1}</span>
+                  {hasCustom && (
+                    <Badge variant="default" className="text-[10px] px-1.5 py-0">커스텀</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                  {_section.narration?.slice(0, 60)}...
+                </p>
+                {hasCustom && (
+                  <p className="text-[10px] text-green-500 mt-0.5">
+                    {(customSections[idx].size / 1024 / 1024).toFixed(1)}MB 업로드됨
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  ref={(el) => { fileInputRefs.current[idx] = el; }}
+                  type="file"
+                  accept="video/mp4,video/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleUpload(idx, file);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs px-2"
+                  disabled={isUploading}
+                  onClick={() => fileInputRefs.current[idx]?.click()}
+                >
+                  {isUploading ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Upload className="w-3 h-3 mr-1" />
+                  )}
+                  {hasCustom ? "교체" : "영상 넣기"}
+                </Button>
+                {hasCustom && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-destructive"
+                    onClick={() => handleDelete(idx)}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        {hasCustomVideos && (
+          <Button
+            onClick={handleRecompose}
+            disabled={isRecomposing}
+            className="w-full mt-4"
+          >
+            {isRecomposing ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RotateCcw className="w-4 h-4 mr-2" />
+            )}
+            {isRecomposing ? "재합성 중..." : "커스텀 영상으로 재합성"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
