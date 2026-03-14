@@ -618,11 +618,39 @@ JSON 형식:
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+      if (response.status === 400 && err.includes("content_filter")) {
+        console.warn(`[generateScript] 콘텐츠 필터 감지, 순화된 프롬프트로 재시도...`);
+        const safeUserPrompt = `다음 주제에 대해 교육적이고 중립적인 관점에서 대본을 작성해주세요. 폭력적이거나 선정적인 표현 없이, 역사적/사회적 맥락을 중심으로 설명해주세요.\n\n원본 주제: ${topic}\n\n${userPrompt}`;
+        const retryResponse = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: safeUserPrompt },
+            ],
+            temperature: 0.7,
+            max_tokens: 16000,
+            response_format: { type: "json_object" },
+          }),
+        });
+        if (!retryResponse.ok) {
+          const retryErr = await retryResponse.text();
+          throw new Error(`OpenAI API error (재시도): ${retryResponse.status} - ${retryErr}`);
+        }
+        const retryData: any = await retryResponse.json();
+        content = retryData.choices[0].message.content;
+      } else {
+        throw new Error(`OpenAI API error: ${response.status} - ${err}`);
+      }
+    } else {
+      const data: any = await response.json();
+      content = data.choices[0].message.content;
     }
-
-    const data: any = await response.json();
-    content = data.choices[0].message.content;
   }
 
   let cleanContent = content.trim();
