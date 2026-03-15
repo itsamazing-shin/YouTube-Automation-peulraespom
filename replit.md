@@ -85,6 +85,10 @@ artifacts-monorepo/
 - **Channel character**: Upload reference character image in branding settings → Gemini generates scene images with the character in each section. Character style disables Pexels, section title drawtext, and lower third bar. Only subtitle SRT + logo overlay remain.
 - **TTS voices**: Gemini TTS default voice = "Aoede" (female), system prompt in English for better voice quality. Default speed 1.25x via atempo.
 - **FFmpeg production constraints**: Minimal drawtext (section title via drawtext box, subtitle via SRT BorderStyle=4). Uses `spawn` instead of `execFile` (buffer overflow prevention). Character style = no drawtext at all.
+- **Image scaling**: `force_original_aspect_ratio=increase,crop` (fills frame, no black bars)
+- **Ken Burns zoom**: zoompan at fps=10, zoom 15% (alternating zoom-in/zoom-out/pan), smooth visible effect
+- **Gemini Image Generation**: Uses user's GEMINI_API_KEY directly (not Replit AI Integration proxy, which doesn't support image generation model). Model: `gemini-2.5-flash-preview-image-generation`
+- **Gemini TTS rate limit**: 6-second cooldown after each successful TTS call + 8-retry with progressive delays (10-30s) to stay within API rate limits
 - **Font path**: Multi-candidate resolution (`cwd/assets`, `cwd/../assets`, `cwd/../../assets`, absolute fallback) for dev/prod compatibility
 - **Vite proxy**: Frontend proxies /api/* requests to API server (port 8080) for video/file serving
 - **Section video replacement**: Users can upload custom MP4 per section and recompose the final video. `recomposeVideo()` collects section files, swaps in custom uploads, re-concatenates

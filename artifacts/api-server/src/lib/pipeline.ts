@@ -162,6 +162,8 @@ export async function regenerateThumbnail(
 
   const [channelNameRow] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_NAME"));
   const channelName = channelNameRow?.value || "";
+  const [geminiKeyRow] = await db.select().from(settings).where(eq(settings.key, "GEMINI_API_KEY"));
+  const userGeminiKey = geminiKeyRow?.value || "";
 
   const geminiSuccess = await generateThumbnailWithGemini(
     thumbnailText,
@@ -169,6 +171,7 @@ export async function regenerateThumbnail(
     project?.title || "",
     channelName,
     thumbPath,
+    userGeminiKey,
   );
 
   if (!geminiSuccess) {
@@ -872,8 +875,14 @@ Voice requirements:
     },
   };
 
-  const maxRetries = 5;
+  const maxRetries = 8;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (attempt > 0) {
+      const waitSec = Math.min(10 + 5 * attempt, 30);
+      console.log(`[Gemini TTS] 재시도 전 ${waitSec}초 대기 (${attempt + 1}/${maxRetries})...`);
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+    }
+
     const response = await fetch(ttsUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -881,9 +890,7 @@ Voice requirements:
     });
 
     if (response.status === 429) {
-      const waitSec = Math.min(5 * Math.pow(2, attempt), 60);
-      console.warn(`[Gemini TTS] 429 속도 제한, ${waitSec}초 대기 후 재시도 (${attempt + 1}/${maxRetries})...`);
-      await new Promise(r => setTimeout(r, waitSec * 1000));
+      console.warn(`[Gemini TTS] 429 속도 제한 (${attempt + 1}/${maxRetries})`);
       continue;
     }
 
@@ -905,6 +912,7 @@ Voice requirements:
     await runFFmpeg(["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-q:a", "2", outputPath]);
     if (fs.existsSync(wavPath) && wavPath !== outputPath) fs.unlinkSync(wavPath);
     console.log(`[Gemini TTS] 생성 완료 (${voiceName}): ${path.basename(outputPath)}`);
+    await new Promise(r => setTimeout(r, 6000));
     return;
   }
 
@@ -1062,12 +1070,12 @@ async function generateImageGemini(
   outputPath: string,
   isVertical: boolean,
   characterImagePath?: string,
+  userGeminiKey?: string,
 ): Promise<void> {
-  const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
-  const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+  const geminiApiKey = userGeminiKey || process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
 
-  if (!geminiBaseUrl || !geminiApiKey) {
-    throw new Error("Gemini AI integration not configured");
+  if (!geminiApiKey) {
+    throw new Error("Gemini API key not configured");
   }
 
   const aspectRatio = isVertical ? "9:16" : "16:9";
@@ -1120,7 +1128,7 @@ STRICT RULES:
   const maxRetries = 5;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const response = await fetch(
-      `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-image-generation:generateContent?key=${geminiApiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1161,11 +1169,11 @@ async function generateThumbnailWithGemini(
   title: string,
   channelName: string,
   outputPath: string,
+  userGeminiKey?: string,
 ): Promise<boolean> {
-  const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
-  const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
+  const geminiApiKey = userGeminiKey || process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
 
-  if (!geminiApiKey || !geminiBaseUrl) {
+  if (!geminiApiKey) {
     console.warn("[Thumbnail] Gemini not configured, skipping direct thumbnail generation");
     return false;
   }
@@ -1197,7 +1205,7 @@ DO NOT: Use small text, light outlines, or place text where it's hard to read.`;
 
   try {
     const response = await fetch(
-      `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-image-generation:generateContent?key=${geminiApiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1286,9 +1294,10 @@ async function generateImage(
   baseUrl: string = "https://api.openai.com/v1",
   quality: "low" | "medium" | "high" = "low",
   characterImagePath?: string,
+  userGeminiKey?: string,
 ): Promise<void> {
   try {
-    await generateImageGemini(prompt, outputPath, isVertical, characterImagePath);
+    await generateImageGemini(prompt, outputPath, isVertical, characterImagePath, userGeminiKey);
   } catch (e) {
     console.warn("Gemini image generation failed, falling back to OpenAI:", (e as Error).message);
     await generateImageOpenAI(prompt, outputPath, apiKey, isVertical, baseUrl, quality);
@@ -1432,22 +1441,22 @@ async function composeMultiImageSectionVideo(
   const srtPath = outputPath.replace(".mp4", ".srt");
   fs.writeFileSync(srtPath, subtitlesToSRT(subtitles));
 
-  const fps = 2;
+  const fps = 10;
   const clipPaths: string[] = [];
   for (let i = 0; i < imgCount; i++) {
     const scaledPath = outputPath.replace(".mp4", `_img${i}_scaled.jpg`);
     await runFFmpeg([
       "-y", "-i", imagePaths[i],
-      "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuvj420p`,
+      "-vf", `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=yuvj420p`,
       "-q:v", "2",
       "-frames:v", "1",
       scaledPath,
     ], 60000);
 
     const clipFrames = Math.ceil(clipDur * fps);
-    const zoomInc = (0.1 / Math.max(clipFrames, 1)).toFixed(6);
+    const zoomInc = (0.15 / Math.max(clipFrames, 1)).toFixed(6);
     const isZoomIn = i % 2 === 0;
-    const zoomExpr = isZoomIn ? `min(1.0+${zoomInc}*on,1.1)` : `max(1.1-${zoomInc}*on,1.0)`;
+    const zoomExpr = isZoomIn ? `min(1.0+${zoomInc}*on,1.15)` : `max(1.15-${zoomInc}*on,1.0)`;
     const zpFilter = `zoompan=z='${zoomExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${clipFrames}:s=${width}x${height}:fps=${fps}`;
 
     const clipPath = outputPath.replace(".mp4", `_clip${i}.mp4`);
@@ -1642,7 +1651,7 @@ async function composeSectionVideo(
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
-  const fps = 2;
+  const fps = 10;
   const totalFrames = Math.ceil(totalDur * fps);
 
   const imgStat = fs.statSync(imagePath);
@@ -1659,29 +1668,29 @@ async function composeSectionVideo(
   const scaledImgPath = outputPath.replace(".mp4", "_scaled.jpg");
   await runFFmpeg([
     "-y", "-i", imagePath,
-    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuvj420p`,
+    "-vf", `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},format=yuvj420p`,
     "-q:v", "2",
     "-frames:v", "1",
     scaledImgPath,
   ], 60000);
 
-  const zoomInc = (0.1 / Math.max(totalFrames, 1)).toFixed(6);
+  const zoomInc = (0.15 / Math.max(totalFrames, 1)).toFixed(6);
   const effectType = sectionIndex % 3;
   let zoomExpr: string;
   let xExpr: string;
   let yExpr: string;
 
   if (effectType === 0) {
-    zoomExpr = `min(1.0+${zoomInc}*on,1.1)`;
+    zoomExpr = `min(1.0+${zoomInc}*on,1.15)`;
     xExpr = "iw/2-(iw/zoom/2)";
     yExpr = "ih/2-(ih/zoom/2)";
   } else if (effectType === 1) {
-    zoomExpr = `max(1.1-${zoomInc}*on,1.0)`;
+    zoomExpr = `max(1.15-${zoomInc}*on,1.0)`;
     xExpr = "iw/2-(iw/zoom/2)";
     yExpr = "ih/2-(ih/zoom/2)";
   } else {
-    zoomExpr = "1.08";
-    const panPx = (0.08 * width / Math.max(totalFrames, 1)).toFixed(4);
+    zoomExpr = "1.10";
+    const panPx = (0.10 * width / Math.max(totalFrames, 1)).toFixed(4);
     xExpr = `${panPx}*on`;
     yExpr = "ih/2-(ih/zoom/2)";
   }
@@ -2307,7 +2316,7 @@ export async function generateVideo(
 
       if (sectionImagePaths.length === 0) {
         try {
-          await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl, "low", characterImagePath);
+          await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl, "low", characterImagePath, settingsMap.GEMINI_API_KEY);
           sectionImagePaths = [imagePath];
         } catch (imgErr: any) {
           console.warn(`이미지 생성 실패 (섹션 ${i + 1}), 기본 이미지 사용:`, imgErr.message);
@@ -2408,12 +2417,13 @@ export async function generateVideo(
         script.title,
         channelName,
         thumbPath,
+        settingsMap.GEMINI_API_KEY,
       );
 
       if (!geminiThumbSuccess) {
         console.log("[Thumbnail] Gemini 직접 생성 실패, 기존 방식으로 폴백");
         const thumbRawPath = path.join(projectDir, `thumbnail_raw_${projectId}.png`);
-        await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium");
+        await generateImage(script.thumbnailPrompt, thumbRawPath, openaiKey, false, openaiBaseUrl, "medium", undefined, settingsMap.GEMINI_API_KEY);
 
         let logoFilePath: string | undefined;
         const logoSetting = settingsMap.CHANNEL_LOGO;
