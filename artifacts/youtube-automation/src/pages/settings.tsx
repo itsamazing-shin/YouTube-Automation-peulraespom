@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic, Key, Settings2, Play, Square } from "lucide-react";
+import { Save, Eye, EyeOff, CheckCircle2, XCircle, Loader2, Upload, Trash2, ImageIcon, Mic, Key, Settings2, Play, Square, Film } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ElevenLabsVoice {
@@ -398,6 +398,7 @@ export default function Settings() {
           </Card>
           <ChannelLogoSection />
           <ChannelCharacterSection />
+          <ChannelIntroSection />
         </TabsContent>
       </Tabs>
     </div>
@@ -650,6 +651,115 @@ function ChannelLogoSection() {
               </Button>
             )}
             <p className="text-xs text-muted-foreground">PNG/JPG, 최대 5MB</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChannelIntroSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const { data: introData } = useQuery<{ introUrl: string | null }>({
+    queryKey: ["channel-intro"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/intro-video`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("intro", file);
+      const res = await fetch(`${API_BASE}/upload-intro`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      queryClient.invalidateQueries({ queryKey: ["channel-intro"] });
+      toast({ title: "업로드 완료", description: "채널 인트로 영상이 저장되었습니다." });
+    } catch {
+      toast({ title: "업로드 실패", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await fetch(`${API_BASE}/intro-video`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["channel-intro"] });
+      toast({ title: "삭제 완료", description: "채널 인트로 영상이 삭제되었습니다." });
+    } catch {
+      toast({ title: "삭제 실패", variant: "destructive" });
+    }
+  };
+
+  const introUrl = introData?.introUrl;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-base">채널 인트로 영상</CardTitle>
+          <Badge variant="outline" className="text-xs">선택</Badge>
+        </div>
+        <CardDescription>모든 영상 맨 앞에 자동으로 삽입될 인트로 영상을 업로드하세요. 없으면 TTS+로고로 자동 생성됩니다.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-start gap-4">
+          {introUrl ? (
+            <div className="relative w-40 h-24 rounded-lg border border-border overflow-hidden bg-black flex-shrink-0">
+              <video
+                src={`${API_BASE}${introUrl}`}
+                className="w-full h-full object-cover"
+                muted
+                playsInline
+                onMouseOver={(e) => (e.target as HTMLVideoElement).play()}
+                onMouseOut={(e) => { const v = e.target as HTMLVideoElement; v.pause(); v.currentTime = 0; }}
+              />
+            </div>
+          ) : (
+            <div className="w-40 h-24 rounded-lg border border-dashed border-border flex items-center justify-center bg-muted/30 flex-shrink-0">
+              <Film className="w-8 h-8 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="video/mp4,video/*"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              {introUrl ? "인트로 변경" : "인트로 업로드"}
+            </Button>
+            {introUrl && (
+              <Button variant="ghost" size="sm" onClick={handleDelete} className="text-destructive hover:text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" />
+                삭제
+              </Button>
+            )}
+            <p className="text-xs text-muted-foreground">MP4 권장, 최대 50MB. 마우스 올리면 미리보기</p>
           </div>
         </div>
       </CardContent>

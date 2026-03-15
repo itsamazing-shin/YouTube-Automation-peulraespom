@@ -2047,6 +2047,110 @@ async function concatenateVideos(
   }
 }
 
+async function getCustomIntroPath(): Promise<string | null> {
+  try {
+    const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_INTRO_VIDEO"));
+    if (!row?.value) return null;
+
+    const OUTPUT_DIR = path.join(process.cwd(), "output");
+    const localPath = path.join(OUTPUT_DIR, row.value.replace("/files/", ""));
+    if (fs.existsSync(localPath)) return localPath;
+
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (!bucketId) return null;
+
+    const { objectStorageClient } = await import("./objectStorage");
+    const bucket = objectStorageClient.bucket(bucketId);
+    const ext = path.extname(row.value) || ".mp4";
+    const file = bucket.file(`branding/channel_intro${ext}`);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+
+    const introDir = path.dirname(localPath);
+    if (!fs.existsSync(introDir)) fs.mkdirSync(introDir, { recursive: true });
+    const [contents] = await file.download();
+    fs.writeFileSync(localPath, contents);
+    console.log("인트로 영상 Object Storage에서 복원 완료");
+    return localPath;
+  } catch (e: any) {
+    console.warn("커스텀 인트로 경로 확인 실패:", e.message);
+    return null;
+  }
+}
+
+async function generateAutoIntro(
+  projectDir: string, sectionVideos: string[], channelName: string,
+  settingsMap: Record<string, string>, elevenlabsKey: string, elevenlabsVoiceId: string,
+  videoLogoPath: string | null, isVertical: boolean, projectId: number,
+): Promise<void> {
+  await updateProgress(projectId, 14, "인트로 나레이션 생성 중...");
+  try {
+    const introNarration = settingsMap.CHANNEL_INTRO || `안녕하세요, 여러분! '${channelName}'입니다. 오늘 정말 중요한 이야기를 준비했습니다. 끝까지 함께 해주세요!`;
+    const introAudioPath = path.join(projectDir, "audio_intro.mp3");
+    await generateTTS(introNarration, introAudioPath, elevenlabsKey, elevenlabsVoiceId, settingsMap);
+    const introDuration = await getAudioDuration(introAudioPath);
+
+    const introImgPath = path.join(projectDir, "intro_img.png");
+    if (videoLogoPath && fs.existsSync(videoLogoPath)) {
+      const { createCanvas, loadImage } = await import("canvas").catch(() => ({ createCanvas: null, loadImage: null }));
+      if (createCanvas && loadImage) {
+        const w = isVertical ? 1080 : 1920;
+        const h = isVertical ? 1920 : 1080;
+        const cvs = createCanvas(w, h);
+        const ctx = cvs.getContext("2d");
+        const gradient = ctx.createLinearGradient(0, 0, w, h);
+        gradient.addColorStop(0, "#0a0a1a");
+        gradient.addColorStop(1, "#1a1a3e");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+        try {
+          const logo = await loadImage(videoLogoPath);
+          const logoSize = isVertical ? 300 : 400;
+          const ratio = Math.min(logoSize / logo.width, logoSize / logo.height);
+          const lw = logo.width * ratio;
+          const lh = logo.height * ratio;
+          ctx.drawImage(logo, w / 2 - lw / 2, h * 0.3 - lh / 2, lw, lh);
+        } catch {}
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = `bold ${isVertical ? 60 : 80}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(channelName, w / 2, h * 0.6);
+        fs.writeFileSync(introImgPath, cvs.toBuffer("image/png"));
+      }
+    }
+
+    if (!fs.existsSync(introImgPath)) {
+      const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
+      if (createCanvas) {
+        const w = isVertical ? 1080 : 1920;
+        const h = isVertical ? 1920 : 1080;
+        const cvs = createCanvas(w, h);
+        const ctx = cvs.getContext("2d");
+        const gradient = ctx.createLinearGradient(0, 0, w, h);
+        gradient.addColorStop(0, "#0a0a1a");
+        gradient.addColorStop(1, "#1a1a3e");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.font = `bold ${isVertical ? 60 : 80}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.fillText(channelName, w / 2, h / 2);
+        fs.writeFileSync(introImgPath, cvs.toBuffer("image/png"));
+      }
+    }
+
+    if (fs.existsSync(introImgPath)) {
+      const introVideoPath = path.join(projectDir, "section_intro.mp4");
+      await composeSectionVideo(introImgPath, introAudioPath, introVideoPath, introDuration, isVertical, introNarration, undefined, undefined, 0);
+      sectionVideos.push(introVideoPath);
+      console.log("인트로 섹션 삽입 완료");
+    }
+  } catch (e: any) {
+    console.error("인트로 생성 실패, 건너뜀:", e.message, e.stack);
+    await updateProgress(projectId, 14, `인트로 생성 실패: ${e.message.substring(0, 100)}`);
+  }
+}
+
 export async function generateVideo(
   projectId: number,
   project: Project,
@@ -2204,73 +2308,34 @@ export async function generateVideo(
 
     const sectionVideos: string[] = [];
     const channelName = settingsMap.CHANNEL_NAME || "";
-    if (channelName) {
-      await updateProgress(projectId, 14, "인트로 나레이션 생성 중...");
+
+    const customIntroPath = await getCustomIntroPath();
+    if (customIntroPath) {
+      await updateProgress(projectId, 14, "채널 인트로 영상 적용 중...");
       try {
-        const introNarration = settingsMap.CHANNEL_INTRO || `안녕하세요, 여러분! '${channelName}'입니다. 오늘 정말 중요한 이야기를 준비했습니다. 끝까지 함께 해주세요!`;
-        const introAudioPath = path.join(projectDir, "audio_intro.mp3");
-        await generateTTS(introNarration, introAudioPath, elevenlabsKey, elevenlabsVoiceId, settingsMap);
-        const introDuration = await getAudioDuration(introAudioPath);
-
-        const introImgPath = path.join(projectDir, "intro_img.png");
-        if (videoLogoPath && fs.existsSync(videoLogoPath)) {
-          const { createCanvas, loadImage } = await import("canvas").catch(() => ({ createCanvas: null, loadImage: null }));
-          if (createCanvas && loadImage) {
-            const w = isVertical ? 1080 : 1920;
-            const h = isVertical ? 1920 : 1080;
-            const cvs = createCanvas(w, h);
-            const ctx = cvs.getContext("2d");
-            const gradient = ctx.createLinearGradient(0, 0, w, h);
-            gradient.addColorStop(0, "#0a0a1a");
-            gradient.addColorStop(1, "#1a1a3e");
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, w, h);
-            try {
-              const logo = await loadImage(videoLogoPath);
-              const logoSize = isVertical ? 300 : 400;
-              const ratio = Math.min(logoSize / logo.width, logoSize / logo.height);
-              const lw = logo.width * ratio;
-              const lh = logo.height * ratio;
-              ctx.drawImage(logo, w / 2 - lw / 2, h * 0.3 - lh / 2, lw, lh);
-            } catch {}
-            ctx.fillStyle = "#FFFFFF";
-            ctx.font = `bold ${isVertical ? 60 : 80}px sans-serif`;
-            ctx.textAlign = "center";
-            ctx.fillText(channelName, w / 2, h * 0.6);
-            fs.writeFileSync(introImgPath, cvs.toBuffer("image/png"));
-          }
-        }
-
-        if (!fs.existsSync(introImgPath)) {
-          const { createCanvas } = await import("canvas").catch(() => ({ createCanvas: null }));
-          if (createCanvas) {
-            const w = isVertical ? 1080 : 1920;
-            const h = isVertical ? 1920 : 1080;
-            const cvs = createCanvas(w, h);
-            const ctx = cvs.getContext("2d");
-            const gradient = ctx.createLinearGradient(0, 0, w, h);
-            gradient.addColorStop(0, "#0a0a1a");
-            gradient.addColorStop(1, "#1a1a3e");
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, w, h);
-            ctx.fillStyle = "#FFFFFF";
-            ctx.font = `bold ${isVertical ? 60 : 80}px sans-serif`;
-            ctx.textAlign = "center";
-            ctx.fillText(channelName, w / 2, h / 2);
-            fs.writeFileSync(introImgPath, cvs.toBuffer("image/png"));
-          }
-        }
-
-        if (fs.existsSync(introImgPath)) {
-          const introVideoPath = path.join(projectDir, "section_intro.mp4");
-          await composeSectionVideo(introImgPath, introAudioPath, introVideoPath, introDuration, isVertical, introNarration, undefined, undefined, 0);
-          sectionVideos.push(introVideoPath);
-          console.log("인트로 섹션 삽입 완료");
-        }
+        const targetW = isVertical ? 1080 : 1920;
+        const targetH = isVertical ? 1920 : 1080;
+        const introVideoPath = path.join(projectDir, "section_intro.mp4");
+        await new Promise<void>((resolve, reject) => {
+          const proc = require("child_process").spawn("ffmpeg", [
+            "-y", "-i", customIntroPath,
+            "-vf", `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+            "-movflags", "+faststart", "-shortest",
+            introVideoPath,
+          ]);
+          proc.stderr.on("data", () => {});
+          proc.on("close", (code: number) => code === 0 ? resolve() : reject(new Error(`FFmpeg intro re-encode failed: ${code}`)));
+        });
+        sectionVideos.push(introVideoPath);
+        console.log("채널 커스텀 인트로 영상 적용 완료");
       } catch (e: any) {
-        console.error("인트로 생성 실패, 건너뜀:", e.message, e.stack);
-        await updateProgress(projectId, 14, `인트로 생성 실패: ${e.message.substring(0, 100)}`);
+        console.error("커스텀 인트로 적용 실패, 자동생성으로 전환:", e.message);
+        await generateAutoIntro(projectDir, sectionVideos, channelName, settingsMap, elevenlabsKey, elevenlabsVoiceId, videoLogoPath, isVertical, projectId);
       }
+    } else if (channelName) {
+      await generateAutoIntro(projectDir, sectionVideos, channelName, settingsMap, elevenlabsKey, elevenlabsVoiceId, videoLogoPath, isVertical, projectId);
     }
 
     const insertSubscribeAfter = Math.floor(script.sections.length / 2) - 1;
@@ -2506,8 +2571,27 @@ export async function recomposeVideo(
   try {
     const sectionVideos: string[] = [];
 
+    const customIntroSrc = await getCustomIntroPath();
     const introPath = path.join(projectDir, "section_intro.mp4");
-    if (fs.existsSync(introPath)) {
+    if (customIntroSrc) {
+      const isVertical = project.videoType === "shorts";
+      const targetW = isVertical ? 1080 : 1920;
+      const targetH = isVertical ? 1920 : 1080;
+      await new Promise<void>((resolve, reject) => {
+        const proc = require("child_process").spawn("ffmpeg", [
+          "-y", "-i", customIntroSrc,
+          "-vf", `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
+          "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+          "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+          "-movflags", "+faststart", "-shortest",
+          introPath,
+        ]);
+        proc.stderr.on("data", () => {});
+        proc.on("close", (code: number) => code === 0 ? resolve() : reject(new Error(`FFmpeg intro re-encode: ${code}`)));
+      });
+      sectionVideos.push(introPath);
+      console.log("재합성: 커스텀 인트로 적용");
+    } else if (fs.existsSync(introPath)) {
       sectionVideos.push(introPath);
     }
 
