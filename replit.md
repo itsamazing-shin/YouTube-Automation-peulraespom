@@ -81,8 +81,10 @@ artifacts-monorepo/
 - **Dark theme**: Default dark mode with purple accent (HSL 243 75% 59%)
 - **Korean UI**: All interface text in Korean
 - **Supported formats**: Long-form (1920x1080) and Shorts (1080x1920)
-- **Visual styles**: Cinematic, Simple Character (stickman), Infographic, Webtoon
-- **FFmpeg production constraints**: No drawtext chains (hangs on limited CPU), no zoompan (too slow). Only scale+pad for video, drawtext only for single-image thumbnail. Uses `spawn` instead of `execFile` (buffer overflow prevention).
+- **Visual styles**: Cinematic, Simple Character (with channel character reference image via Gemini), Infographic, Webtoon
+- **Channel character**: Upload reference character image in branding settings → Gemini generates scene images with the character in each section. Character style disables Pexels, section title drawtext, and lower third bar. Only subtitle SRT + logo overlay remain.
+- **TTS voices**: Gemini TTS default voice = "Aoede" (female), system prompt in English for better voice quality. Default speed 1.25x via atempo.
+- **FFmpeg production constraints**: Minimal drawtext (section title via drawtext box, subtitle via SRT BorderStyle=4). Uses `spawn` instead of `execFile` (buffer overflow prevention). Character style = no drawtext at all.
 - **Font path**: Multi-candidate resolution (`cwd/assets`, `cwd/../assets`, `cwd/../../assets`, absolute fallback) for dev/prod compatibility
 - **Vite proxy**: Frontend proxies /api/* requests to API server (port 8080) for video/file serving
 - **Section video replacement**: Users can upload custom MP4 per section and recompose the final video. `recomposeVideo()` collects section files, swaps in custom uploads, re-concatenates

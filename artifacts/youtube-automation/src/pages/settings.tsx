@@ -397,6 +397,7 @@ export default function Settings() {
             </CardContent>
           </Card>
           <ChannelLogoSection />
+          <ChannelCharacterSection />
         </TabsContent>
       </Tabs>
     </div>
@@ -649,6 +650,112 @@ function ChannelLogoSection() {
               </Button>
             )}
             <p className="text-xs text-muted-foreground">PNG/JPG, 최대 5MB</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChannelCharacterSection() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const { data: characterData } = useQuery<{ characterUrl: string | null }>({
+    queryKey: ["channel-character"],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/character`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+  });
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("character", file);
+      const res = await fetch(`${API_BASE}/upload-character`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error("Upload failed");
+      queryClient.invalidateQueries({ queryKey: ["channel-character"] });
+      toast({ title: "업로드 완료", description: "채널 캐릭터가 저장되었습니다." });
+    } catch {
+      toast({ title: "업로드 실패", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await fetch(`${API_BASE}/character`, { method: "DELETE" });
+      queryClient.invalidateQueries({ queryKey: ["channel-character"] });
+      toast({ title: "삭제 완료", description: "채널 캐릭터가 삭제되었습니다." });
+    } catch {
+      toast({ title: "삭제 실패", variant: "destructive" });
+    }
+  };
+
+  const characterUrl = characterData?.characterUrl;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-base">채널 캐릭터</CardTitle>
+          <Badge variant="outline" className="text-xs">선택</Badge>
+        </div>
+        <CardDescription>"캐릭터" 비주얼 스타일 선택 시, 이 캐릭터가 매 섹션 이미지에 등장합니다</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-4">
+          {characterUrl ? (
+            <div className="relative w-20 h-20 rounded-lg border border-border overflow-hidden bg-white flex-shrink-0">
+              <img
+                src={`${API_BASE}${characterUrl}`}
+                alt="채널 캐릭터"
+                className="w-full h-full object-contain"
+              />
+            </div>
+          ) : (
+            <div className="w-20 h-20 rounded-lg border border-dashed border-border flex items-center justify-center bg-muted/30 flex-shrink-0">
+              <ImageIcon className="w-8 h-8 text-muted-foreground" />
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleUpload}
+              className="hidden"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
+              {characterUrl ? "캐릭터 변경" : "캐릭터 업로드"}
+            </Button>
+            {characterUrl && (
+              <Button variant="ghost" size="sm" onClick={handleDelete} className="text-destructive hover:text-destructive">
+                <Trash2 className="w-4 h-4 mr-2" />
+                삭제
+              </Button>
+            )}
+            <p className="text-xs text-muted-foreground">PNG 권장 (투명 배경), 최대 5MB</p>
           </div>
         </div>
       </CardContent>

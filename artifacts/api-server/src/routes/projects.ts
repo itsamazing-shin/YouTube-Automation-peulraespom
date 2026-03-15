@@ -316,6 +316,107 @@ router.delete("/logo", async (_req, res): Promise<void> => {
   }
 });
 
+const characterUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const charDir = path.join(OUTPUT_DIR, "characters");
+      if (!fs.existsSync(charDir)) fs.mkdirSync(charDir, { recursive: true });
+      cb(null, charDir);
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname) || ".png";
+      cb(null, `channel_character${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+router.post("/upload-character", characterUpload.single("character"), async (req, res): Promise<void> => {
+  try {
+    if (!req.file) { res.status(400).json({ error: "캐릭터 파일이 필요합니다." }); return; }
+    const relativePath = `/files/characters/${req.file.filename}`;
+    await db.insert(settings).values({ key: "CHANNEL_CHARACTER", value: relativePath })
+      .onConflictDoUpdate({ target: settings.key, set: { value: relativePath } });
+
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (bucketId) {
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        await bucket.upload(req.file.path, {
+          destination: `branding/channel_character${path.extname(req.file.originalname) || ".png"}`,
+          metadata: { contentType: req.file.mimetype || "image/png" },
+        });
+        console.log("캐릭터 Object Storage 업로드 완료");
+      } catch (e: any) {
+        console.warn("캐릭터 Object Storage 업로드 실패:", e.message);
+      }
+    }
+
+    res.json({ success: true, characterUrl: relativePath });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "캐릭터 업로드 실패" });
+  }
+});
+
+async function ensureCharacterFromStorage(): Promise<void> {
+  const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_CHARACTER"));
+  if (!row?.value) return;
+
+  const localPath = path.join(OUTPUT_DIR, row.value.replace("/files/", ""));
+  if (fs.existsSync(localPath)) return;
+
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) return;
+
+  try {
+    const bucket = objectStorageClient.bucket(bucketId);
+    const ext = path.extname(row.value) || ".png";
+    const file = bucket.file(`branding/channel_character${ext}`);
+    const [exists] = await file.exists();
+    if (!exists) return;
+
+    const charDir = path.dirname(localPath);
+    if (!fs.existsSync(charDir)) fs.mkdirSync(charDir, { recursive: true });
+    const [contents] = await file.download();
+    fs.writeFileSync(localPath, contents);
+    console.log("캐릭터 Object Storage에서 복원 완료");
+  } catch (e: any) {
+    console.warn("캐릭터 복원 실패:", e.message);
+  }
+}
+
+router.get("/character", async (_req, res): Promise<void> => {
+  try {
+    await ensureCharacterFromStorage();
+    const [row] = await db.select().from(settings).where(eq(settings.key, "CHANNEL_CHARACTER"));
+    res.json({ characterUrl: row?.value || null });
+  } catch {
+    res.json({ characterUrl: null });
+  }
+});
+
+router.delete("/character", async (_req, res): Promise<void> => {
+  try {
+    await db.delete(settings).where(eq(settings.key, "CHANNEL_CHARACTER"));
+    const charDir = path.join(OUTPUT_DIR, "characters");
+    if (fs.existsSync(charDir)) {
+      for (const f of fs.readdirSync(charDir)) fs.unlinkSync(path.join(charDir, f));
+    }
+    const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+    if (bucketId) {
+      try {
+        const bucket = objectStorageClient.bucket(bucketId);
+        await bucket.file("branding/channel_character.png").delete().catch(() => {});
+        await bucket.file("branding/channel_character.jpg").delete().catch(() => {});
+        await bucket.file("branding/channel_character.jpeg").delete().catch(() => {});
+      } catch {}
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const sectionVideoUpload = multer({
   storage: multer.diskStorage({
     destination: (req, _file, cb) => {

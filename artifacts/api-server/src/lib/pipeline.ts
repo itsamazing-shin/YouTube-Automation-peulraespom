@@ -523,7 +523,7 @@ async function generateScript(
 
   const styleMap: Record<string, string> = {
     cinematic: "Cinematic photorealistic scene. Dramatic film lighting, professional composition, shallow depth of field.",
-    "simple-character": "Simple cartoon character illustration in the style of Korean YouTube channels like '이상한경제'. Characters have: perfectly round white/light circle head, very simple dot eyes and small line mouth, NO nose, minimal facial features but EXTREMELY exaggerated emotional expressions (crying rivers of tears, steam coming from ears when angry, sparkling eyes when excited, jaw dropping in shock). Body is simple but wearing recognizable clothes (suits, casual wear). Characters interact with oversized props related to the scene (giant money bags, huge documents, oversized coins, large arrows pointing up/down). Background should be a relevant scene setting (city street, office, home). The overall style is cute, humorous, and immediately conveys the emotion of the scene. Similar to 졸라맨/이상한경제 art style. Bold thick outlines, flat colors, clean vector-like quality.",
+    "simple-character": "Illustration featuring the channel's signature character (provided as reference image). Draw the EXACT same character from the reference in this scene. Keep character proportions, style, and design perfectly consistent. Place the character naturally in the scene with appropriate pose and facial expression. Background should be a detailed, relevant scene setting. NO text or writing in the image. Clean illustration style with vivid colors.",
     infographic: "Clean modern infographic style. Data charts, graphs, icons, flat design, bold typography, organized layout with clear visual hierarchy.",
     webtoon: "Korean webtoon illustration style. Vibrant saturated colors, expressive characters, dynamic poses, manhwa-inspired art with clean lines.",
   };
@@ -837,23 +837,25 @@ async function generateTTSWithGemini(
   text: string,
   outputPath: string,
   geminiApiKey: string,
-  voiceName: string = "Kore",
+  voiceName: string = "Aoede",
 ): Promise<void> {
   const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`;
+  console.log(`[Gemini TTS] 요청: voice=${voiceName}, text=${text.substring(0, 50)}...`);
 
   const body = {
     systemInstruction: {
       parts: [{
-        text: `당신은 신사임당, 슈카월드 같은 인기 한국 유튜브 경제/교양 채널의 전문 여성 내레이터입니다.
+        text: `You are a professional female Korean narrator for popular YouTube channels.
 
-목소리 스타일:
-- 차분하고 또렷한 톤을 기본으로 하되, 내용의 중요도에 따라 자연스럽게 톤과 속도를 변화시키세요.
-- 충격적인 숫자나 사실을 말할 때는 살짝 놀란 듯 강조하고, 설명 부분에서는 편안하게 이야기하듯 전달하세요.
-- 문장 끝을 너무 올리거나 내리지 말고, 자연스러운 한국어 억양을 유지하세요.
-- 쉼표와 마침표에서 자연스러운 호흡을 넣어 기계적으로 들리지 않게 하세요.
-- 빠르지 않은 적당한 속도로, 시청자가 내용을 이해하면서 들을 수 있게 전달하세요.
-- 전문적이면서도 친근한 느낌을 동시에 주세요. 뉴스 앵커처럼 딱딱하지 않고, 옆에서 이야기해주는 느낌으로.
-- "~입니다", "~했는데요" 등 한국어 어미를 자연스러운 톤으로 발화하세요.`
+Voice requirements:
+- Speak in a warm, clear, and naturally feminine Korean voice
+- Vary your tone naturally based on content importance — slightly surprised for shocking facts, calm for explanations
+- Maintain natural Korean intonation without exaggerated rises or drops at sentence endings
+- Include natural breathing pauses at commas and periods — never sound robotic or monotone
+- Speak at a moderate, comfortable pace that allows viewers to follow along
+- Sound professional yet approachable — like a knowledgeable friend explaining things, not a stiff news anchor
+- Pronounce Korean sentence endings like "~입니다", "~했는데요" with warm, natural feminine intonation
+- Add subtle emotional expression — empathy, curiosity, concern — matching the content`
       }],
     },
     contents: [{
@@ -973,7 +975,8 @@ async function generateTTS(
   for (const engine of engines) {
     try {
       await engine();
-      const ttsSpeed = parseFloat(settingsMap?.TTS_SPEED || "1.25");
+      const rawSpeed = parseFloat(settingsMap?.TTS_SPEED || "1.25");
+      const ttsSpeed = isFinite(rawSpeed) && rawSpeed >= 0.5 && rawSpeed <= 2.0 ? rawSpeed : 1.25;
       if (ttsSpeed !== 1.0 && fs.existsSync(outputPath)) {
         const tmpSpeedPath = outputPath.replace(/\.mp3$/, "_speed.mp3");
         try {
@@ -1045,6 +1048,7 @@ async function generateImageGemini(
   prompt: string,
   outputPath: string,
   isVertical: boolean,
+  characterImagePath?: string,
 ): Promise<void> {
   const geminiBaseUrl = process.env.AI_INTEGRATIONS_GEMINI_BASE_URL;
   const geminiApiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
@@ -1054,7 +1058,41 @@ async function generateImageGemini(
   }
 
   const aspectRatio = isVertical ? "9:16" : "16:9";
-  const enhancedPrompt = `Generate a high-quality illustration. ${prompt}. The image should be vivid, detailed, and suitable for a YouTube video frame at ${isVertical ? "1080x1920" : "1920x1080"} resolution.`;
+
+  const parts: any[] = [];
+
+  if (characterImagePath && fs.existsSync(characterImagePath)) {
+    const charImgData = fs.readFileSync(characterImagePath);
+    const ext = path.extname(characterImagePath).toLowerCase();
+    const mimeType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
+    parts.push({
+      inlineData: {
+        mimeType,
+        data: charImgData.toString("base64"),
+      },
+    });
+    parts.push({
+      text: `Generate a high-quality illustration for a YouTube video frame (${isVertical ? "1080x1920" : "1920x1080"}).
+
+CRITICAL CHARACTER RULES:
+- The attached image is the reference character. You MUST draw this EXACT character in the scene.
+- Keep the character's visual style perfectly consistent: round white head, simple dot eyes, small mouth, dark suit, same proportions.
+- Place the character naturally in the scene with an appropriate pose and expression matching the context.
+- The character should be prominently visible, occupying about 30-40% of the image height.
+
+SCENE: ${prompt}
+
+STRICT RULES:
+- Do NOT include ANY text, letters, words, signs, labels, or writing in the image
+- The image must be purely visual with ZERO text elements
+- Make the background detailed and relevant to the scene
+- Use vivid colors and professional illustration quality`,
+    });
+  } else {
+    parts.push({
+      text: `Generate a high-quality illustration. ${prompt}. The image should be vivid, detailed, and suitable for a YouTube video frame at ${isVertical ? "1080x1920" : "1920x1080"} resolution. Do NOT include any text in the image.`,
+    });
+  }
 
   const response = await fetch(
     `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
@@ -1062,7 +1100,7 @@ async function generateImageGemini(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: enhancedPrompt }] }],
+        contents: [{ parts }],
         generationConfig: {
           responseModalities: ["IMAGE", "TEXT"],
           imageGenerationConfig: {
@@ -1221,9 +1259,10 @@ async function generateImage(
   isVertical: boolean,
   baseUrl: string = "https://api.openai.com/v1",
   quality: "low" | "medium" | "high" = "low",
+  characterImagePath?: string,
 ): Promise<void> {
   try {
-    await generateImageGemini(prompt, outputPath, isVertical);
+    await generateImageGemini(prompt, outputPath, isVertical, characterImagePath);
   } catch (e) {
     console.warn("Gemini image generation failed, falling back to OpenAI:", (e as Error).message);
     await generateImageOpenAI(prompt, outputPath, apiKey, isVertical, baseUrl, quality);
@@ -2015,6 +2054,40 @@ export async function generateVideo(
     }
   }
 
+  let characterImagePath: string | undefined;
+  const isCharacterStyle = project.visualStyle === "simple-character";
+  if (isCharacterStyle && settingsMap.CHANNEL_CHARACTER) {
+    const cp = path.join(OUTPUT_DIR, settingsMap.CHANNEL_CHARACTER.replace("/files/", ""));
+    if (fs.existsSync(cp)) {
+      characterImagePath = cp;
+    } else {
+      const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+      if (bucketId) {
+        try {
+          const ext = path.extname(settingsMap.CHANNEL_CHARACTER) || ".png";
+          const bucket = objectStorageClient.bucket(bucketId);
+          const file = bucket.file(`branding/channel_character${ext}`);
+          const [exists] = await file.exists();
+          if (exists) {
+            const charDir = path.dirname(cp);
+            if (!fs.existsSync(charDir)) fs.mkdirSync(charDir, { recursive: true });
+            const [contents] = await file.download();
+            fs.writeFileSync(cp, contents);
+            characterImagePath = cp;
+            console.log("캐릭터 Object Storage에서 복원 완료 (파이프라인)");
+          }
+        } catch (e: any) {
+          console.warn("캐릭터 복원 실패:", e.message);
+        }
+      }
+    }
+    if (characterImagePath) {
+      console.log(`[Pipeline] 캐릭터 스타일: 캐릭터 이미지 사용 - ${characterImagePath}`);
+    } else {
+      console.warn("[Pipeline] 캐릭터 스타일이지만 캐릭터 이미지가 없습니다. 기본 이미지 생성으로 진행.");
+    }
+  }
+
   try {
     let commentAnalysis = "";
     let referenceVideoContext = "";
@@ -2167,7 +2240,7 @@ export async function generateVideo(
 
     const insertSubscribeAfter = Math.floor(script.sections.length / 2) - 1;
     const pexelsKey = settingsMap.PEXELS_API_KEY || process.env.PEXELS_API_KEY || "";
-    const usePexelsFirst = !!pexelsKey;
+    const usePexelsFirst = !!pexelsKey && !isCharacterStyle;
 
     for (let i = 0; i < script.sections.length; i++) {
       const section = script.sections[i];
@@ -2187,7 +2260,7 @@ export async function generateVideo(
         console.warn(`Whisper failed for section ${i}, using estimation:`, e);
       }
 
-      await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: 이미지 검색 중...`);
+      await updateProgress(projectId, Math.round(pctBase + 10), `섹션 ${i + 1}/${script.sections.length}: ${isCharacterStyle ? "캐릭터 이미지" : "이미지"} 생성 중...`);
       const imagePath = path.join(projectDir, `image_${i}.png`);
       let sectionImagePaths: string[] = [];
 
@@ -2208,7 +2281,7 @@ export async function generateVideo(
 
       if (sectionImagePaths.length === 0) {
         try {
-          await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl);
+          await generateImage(section.imagePrompt, imagePath, openaiKey, isVertical, openaiBaseUrl, "low", characterImagePath);
           sectionImagePaths = [imagePath];
         } catch (imgErr: any) {
           console.warn(`이미지 생성 실패 (섹션 ${i + 1}), 기본 이미지 사용:`, imgErr.message);
@@ -2267,8 +2340,8 @@ export async function generateVideo(
 
       const sectionPath = path.join(projectDir, `section_${i}.mp4`);
       try {
-        const sectionHighlight = section.subtitleHighlight || "";
-        console.log(`섹션 ${i + 1} 영상 합성 시작 (duration: ${audioDuration}s, images: ${sectionImagePaths.length}, highlight: "${sectionHighlight}")`);
+        const sectionHighlight = isCharacterStyle ? "" : (section.subtitleHighlight || "");
+        console.log(`섹션 ${i + 1} 영상 합성 시작 (duration: ${audioDuration}s, images: ${sectionImagePaths.length}, highlight: "${sectionHighlight}", character: ${isCharacterStyle})`);
         if (sectionImagePaths.length > 1) {
           await composeMultiImageSectionVideo(sectionImagePaths, audioPath, sectionPath, audioDuration, isVertical, section.narration, whisperSegments, videoLogoPath, sectionHighlight, channelName);
         } else {
