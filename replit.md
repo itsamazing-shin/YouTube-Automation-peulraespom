@@ -64,12 +64,12 @@ artifacts-monorepo/
 ## Video Generation Pipeline
 
 1. **Script Generation** (GPT-4o): Topic → structured JSON script with sections, dynamic narration length per duration
-2. **TTS** (3-engine): User-selectable engine (Gemini TTS / ElevenLabs / Google Translate) with auto-fallback chain. Setting: `TTS_ENGINE` in DB.
+2. **TTS** (3-engine): User-selectable engine (Gemini TTS / ElevenLabs / Google Translate) with auto-fallback chain. Settings: `TTS_ENGINE`, `GEMINI_VOICE_NAME` (default: Aoede), `TTS_SPEED` (default: 1.25x) in DB. Speed applied via FFmpeg `atempo` filter post-TTS.
 3. **Subtitle Timing** (Whisper): Accurate speech-to-text timing via OpenAI Whisper
 4. **Image Generation** (gpt-image-1): Per-section scene images; for cinematic style, supplemented with Pexels stock images
 5. **Pexels Integration** (cinematic only): GPT-4o-mini extracts keywords → Pexels API fetches 1-2 supplementary images per section → multi-image composition with Ken Burns
-6. **Video Composition** (FFmpeg): Static image + audio mux with scale/pad filter only (no drawtext, no zoompan — removed for production reliability). Uses `spawn` for FFmpeg process management (no buffer overflow). 24fps, ultrafast preset, CRF 28.
-7. **Subtitles**: Generated as SRT files per section (not hardcoded into video via drawtext — too CPU-heavy for production). SRT available for download/embedding.
+6. **Video Composition** (FFmpeg): Static image + audio mux with scale/pad + section title overlay (좌측 상단, drawtext with box background) + subtitle burn-in (SRT with BorderStyle=4 배경). Uses `spawn` for FFmpeg process management (no buffer overflow). 24fps, ultrafast preset, CRF 28.
+7. **Subtitles**: SRT generated per section, burned into final video during concatenation with `force_style` (FontSize, BackColour, BorderStyle=4 for background box). `drawtext` uses `h` for height, `drawbox` uses `ih`.
 8. **Channel Logo Overlay**: Logo displayed top-left on all video sections and thumbnails (200px landscape / 160px portrait)
 9. **Subscribe CTA** (auto): At ~50% mark of long-form videos, a subscribe/bell section is auto-inserted with TTS narration + visual overlay (skipped for Shorts)
 10. **Concatenation** (FFmpeg): Merge all sections into final MP4 with `-c copy` (no re-encode)

@@ -272,16 +272,16 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {[
-                  { value: "Kore", label: "Kore", desc: "차분하고 또렷한 여성 음성 (기본, 권장)" },
+                  { value: "Kore", label: "Kore", desc: "차분하고 또렷한 여성 음성" },
                   { value: "Leda", label: "Leda", desc: "부드럽고 따뜻한 여성 음성" },
-                  { value: "Aoede", label: "Aoede", desc: "밝고 친근한 여성 음성" },
+                  { value: "Aoede", label: "Aoede", desc: "밝고 친근한 여성 음성 (기본, 권장)" },
                   { value: "Zephyr", label: "Zephyr", desc: "가볍고 경쾌한 음성" },
                   { value: "Puck", label: "Puck", desc: "활기차고 에너지 넘치는 음성" },
                   { value: "Charon", label: "Charon", desc: "깊고 차분한 남성 음성" },
                   { value: "Orus", label: "Orus", desc: "무게감 있는 남성 음성" },
                   { value: "Fenrir", label: "Fenrir", desc: "힘 있고 진지한 남성 음성" },
                 ].map(voice => {
-                  const currentVoice = values["GEMINI_VOICE_NAME"] || settings.find(s => s.key === "GEMINI_VOICE_NAME")?.value || "Kore";
+                  const currentVoice = values["GEMINI_VOICE_NAME"] || settings.find(s => s.key === "GEMINI_VOICE_NAME")?.value || "Aoede";
                   return (
                     <div
                       key={voice.value}
@@ -301,6 +301,41 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">TTS 재생 속도</CardTitle>
+              <CardDescription>나레이션 음성의 재생 속도를 조절합니다.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                const currentSpeed = values["TTS_SPEED"] || settings.find(s => s.key === "TTS_SPEED")?.value || "1.25";
+                const speedOptions = [
+                  { value: "1.0", label: "1.0x (원본)" },
+                  { value: "1.1", label: "1.1x" },
+                  { value: "1.15", label: "1.15x" },
+                  { value: "1.2", label: "1.2x" },
+                  { value: "1.25", label: "1.25x (기본)" },
+                  { value: "1.3", label: "1.3x" },
+                  { value: "1.4", label: "1.4x" },
+                  { value: "1.5", label: "1.5x" },
+                ];
+                return (
+                  <div className="flex gap-2 flex-wrap">
+                    {speedOptions.map(opt => (
+                      <div
+                        key={opt.value}
+                        className={`px-3 py-1.5 rounded-lg border cursor-pointer text-sm transition-colors ${currentSpeed === opt.value ? "border-primary bg-primary/10 text-primary font-medium" : "border-border hover:border-primary/50 text-muted-foreground"}`}
+                        onClick={() => setValues(prev => ({ ...prev, TTS_SPEED: opt.value }))}
+                      >
+                        {opt.label}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </CardContent>
+          </Card>
 
           {(values["TTS_ENGINE"] || settings.find(s => s.key === "TTS_ENGINE")?.value || "elevenlabs") === "elevenlabs" && (
             <VoiceSelector

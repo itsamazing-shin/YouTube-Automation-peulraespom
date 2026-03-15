@@ -931,7 +931,7 @@ async function generateTTS(
 ): Promise<void> {
   const ttsEngine = settingsMap?.TTS_ENGINE || "elevenlabs";
   const geminiKey = settingsMap?.GEMINI_API_KEY || "";
-  const geminiVoice = settingsMap?.GEMINI_VOICE_NAME || "Kore";
+  const geminiVoice = settingsMap?.GEMINI_VOICE_NAME || "Aoede";
 
   if (ttsEngine === "google") {
     return generateTTSWithGoogleTranslate(text, outputPath);
@@ -973,6 +973,23 @@ async function generateTTS(
   for (const engine of engines) {
     try {
       await engine();
+      const ttsSpeed = parseFloat(settingsMap?.TTS_SPEED || "1.25");
+      if (ttsSpeed !== 1.0 && fs.existsSync(outputPath)) {
+        const tmpSpeedPath = outputPath.replace(/\.mp3$/, "_speed.mp3");
+        try {
+          await runFFmpeg([
+            "-y", "-i", outputPath,
+            "-filter:a", `atempo=${ttsSpeed}`,
+            "-c:a", "libmp3lame", "-q:a", "2",
+            tmpSpeedPath,
+          ], 60000);
+          fs.renameSync(tmpSpeedPath, outputPath);
+          console.log(`[TTS] 속도 ${ttsSpeed}x 적용 완료`);
+        } catch (speedErr: any) {
+          console.warn(`[TTS] 속도 변환 실패, 원본 사용: ${speedErr.message}`);
+          if (fs.existsSync(tmpSpeedPath)) fs.unlinkSync(tmpSpeedPath);
+        }
+      }
       return;
     } catch (e: any) {
       console.warn(`[TTS] 엔진 실패, 다음 시도: ${e.message}`);
@@ -1533,16 +1550,13 @@ function buildLowerThirdFilter(
   const safeFontPath = fontPath.replace(/:/g, "\\:").replace(/\\/g, "/");
   const safeText = sanitizeForFFmpeg(subtitleHighlight);
 
-  const barH = isVertical ? 70 : 56;
-  const fontSize = isVertical ? 32 : 28;
-  const barOffset = isVertical ? 20 : 16;
-  const textPadding = Math.round((barH - fontSize) / 2);
-  const barFromBottom = barH + barOffset;
-  const textFromBottom = barFromBottom - textPadding;
+  const fontSize = isVertical ? 38 : 34;
+  const boxPad = 12;
+  const topY = isVertical ? 30 : 20;
 
-  let filter = `drawbox=y=ih-${barFromBottom}:width=iw:height=${barH}:color=black@0.65:t=fill,` +
-    `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
-    `:fontcolor=#FFFFFF:x=30:y=h-${textFromBottom}`;
+  let filter = `drawtext=text='${safeText}':fontfile='${safeFontPath}':fontsize=${fontSize}` +
+    `:fontcolor=#FFFFFF:borderw=2:bordercolor=black:x=${boxPad + 4}:y=${topY}` +
+    `:box=1:boxcolor=black@0.7:boxborderw=${boxPad}`;
 
   return filter;
 }
@@ -1915,7 +1929,7 @@ async function concatenateVideos(
         await runFFmpeg([
           "-y", "-f", "concat", "-safe", "0",
           "-i", listPath,
-          "-vf", `subtitles='${safeSrtPath}':fontsdir='${safeFontDir}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2,MarginV=${marginV}'`,
+          "-vf", `subtitles='${safeSrtPath}':fontsdir='${safeFontDir}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=2,Shadow=0,BorderStyle=4,Alignment=2,MarginV=${marginV}'`,
           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
           "-r", "2", "-pix_fmt", "yuv420p",
           "-c:a", "aac", "-b:a", "128k",
