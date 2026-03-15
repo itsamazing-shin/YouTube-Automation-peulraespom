@@ -394,6 +394,7 @@ function SectionVideoManager({ projectId, sections }: { projectId: number; secti
   const queryClient = useQueryClient();
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   const [isRecomposing, setIsRecomposing] = useState(false);
+  const [previewIdx, setPreviewIdx] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const { data: customSections = {} } = useQuery<Record<number, { filename: string; size: number }>>({
@@ -490,8 +491,30 @@ function SectionVideoManager({ projectId, sections }: { projectId: number; secti
                     {(customSections[idx].size / 1024 / 1024).toFixed(1)}MB 업로드됨
                   </p>
                 )}
+                {previewIdx === idx && (
+                  <div className="mt-2 rounded overflow-hidden border border-border">
+                    <video
+                      src={hasCustom
+                        ? `${API_BASE}/files/project_${projectId}/custom_section_${idx}.mp4`
+                        : `${API_BASE}/files/project_${projectId}/section_${idx}.mp4`
+                      }
+                      controls
+                      autoPlay
+                      className="w-full max-h-48 bg-black"
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={`h-8 w-8 p-0 ${previewIdx === idx ? "text-primary" : ""}`}
+                  onClick={() => setPreviewIdx(previewIdx === idx ? null : idx)}
+                  title="미리보기"
+                >
+                  <Play className="w-3 h-3" />
+                </Button>
                 <input
                   ref={(el) => { fileInputRefs.current[idx] = el; }}
                   type="file"
