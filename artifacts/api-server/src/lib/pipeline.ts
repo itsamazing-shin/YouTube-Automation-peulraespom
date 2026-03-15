@@ -1926,16 +1926,26 @@ async function concatenateVideos(
       const safeFontDir = fontDir.replace(/:/g, "\\:").replace(/\\/g, "/");
       const fontName = "Noto Sans CJK KR";
       try {
+        const concatTmpPath = outputPath.replace(".mp4", "_concat_tmp.mp4");
         await runFFmpeg([
           "-y", "-f", "concat", "-safe", "0",
           "-i", listPath,
+          "-c:v", "copy",
+          "-c:a", "aac", "-b:a", "128k",
+          "-movflags", "+faststart",
+          concatTmpPath,
+        ], 600000);
+
+        await runFFmpeg([
+          "-y", "-i", concatTmpPath,
           "-vf", `subtitles='${safeSrtPath}':fontsdir='${safeFontDir}':force_style='FontName=${fontName},FontSize=${fontSize},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,Outline=2,Shadow=0,BorderStyle=4,Alignment=2,MarginV=${marginV}'`,
           "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
           "-r", "2", "-pix_fmt", "yuv420p",
-          "-c:a", "aac", "-b:a", "128k",
+          "-c:a", "copy",
           "-movflags", "+faststart",
           outputPath,
-        ], 900000);
+        ], 1800000);
+        try { fs.unlinkSync(concatTmpPath); } catch {};
       } catch (subErr: any) {
         console.warn("[concatenateVideos] 자막 번인 실패, 자막 없이 합성:", subErr.message);
         await runFFmpeg([
