@@ -872,30 +872,43 @@ Voice requirements:
     },
   };
 
-  const response = await fetch(ttsUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const maxRetries = 5;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(ttsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini TTS error: ${response.status} - ${err.substring(0, 200)}`);
+    if (response.status === 429) {
+      const waitSec = Math.min(5 * Math.pow(2, attempt), 60);
+      console.warn(`[Gemini TTS] 429 속도 제한, ${waitSec}초 대기 후 재시도 (${attempt + 1}/${maxRetries})...`);
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      continue;
+    }
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Gemini TTS error: ${response.status} - ${err.substring(0, 200)}`);
+    }
+
+    const data = await response.json() as any;
+    const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    if (!inlineData?.data) {
+      throw new Error("Gemini TTS: 오디오 데이터가 없습니다.");
+    }
+
+    const audioBuf = Buffer.from(inlineData.data, "base64");
+    const wavPath = outputPath.replace(/\.mp3$/, ".wav");
+    fs.writeFileSync(wavPath, audioBuf);
+
+    await runFFmpeg(["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-q:a", "2", outputPath]);
+    if (fs.existsSync(wavPath) && wavPath !== outputPath) fs.unlinkSync(wavPath);
+    console.log(`[Gemini TTS] 생성 완료 (${voiceName}): ${path.basename(outputPath)}`);
+    return;
   }
 
-  const data = await response.json() as any;
-  const inlineData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-  if (!inlineData?.data) {
-    throw new Error("Gemini TTS: 오디오 데이터가 없습니다.");
-  }
-
-  const audioBuf = Buffer.from(inlineData.data, "base64");
-  const wavPath = outputPath.replace(/\.mp3$/, ".wav");
-  fs.writeFileSync(wavPath, audioBuf);
-
-  await runFFmpeg(["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-q:a", "2", outputPath]);
-  if (fs.existsSync(wavPath) && wavPath !== outputPath) fs.unlinkSync(wavPath);
-  console.log(`[Gemini TTS] 생성 완료 (${voiceName}): ${path.basename(outputPath)}`);
+  throw new Error(`Gemini TTS: ${maxRetries}회 재시도 후에도 429 속도 제한`);
 }
 
 async function tryElevenLabs(text: string, outputPath: string, apiKey: string, voiceId: string): Promise<void> {
@@ -1094,38 +1107,51 @@ STRICT RULES:
     });
   }
 
-  const response = await fetch(
-    `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        generationConfig: {
-          responseModalities: ["IMAGE", "TEXT"],
-          imageGenerationConfig: {
-            aspectRatio,
-          },
-        },
-      }),
+  const requestBody = JSON.stringify({
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities: ["IMAGE", "TEXT"],
+      imageGenerationConfig: {
+        aspectRatio,
+      },
     },
-  );
+  });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Gemini image generation error: ${response.status} - ${err}`);
-  }
+  const maxRetries = 5;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await fetch(
+      `${geminiBaseUrl}/v1beta/models/gemini-2.5-flash-image:generateContent?key=${geminiApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+      },
+    );
 
-  const data: any = await response.json();
-  const candidates = data.candidates;
-  if (candidates && candidates[0]?.content?.parts) {
-    for (const part of candidates[0].content.parts) {
-      if (part.inlineData) {
-        fs.writeFileSync(outputPath, Buffer.from(part.inlineData.data, "base64"));
-        return;
+    if (response.status === 429) {
+      const waitSec = Math.min(5 * Math.pow(2, attempt), 60);
+      console.warn(`[Gemini Image] 429 속도 제한, ${waitSec}초 대기 후 재시도 (${attempt + 1}/${maxRetries})...`);
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      continue;
+    }
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`Gemini image generation error: ${response.status} - ${err}`);
+    }
+
+    const data: any = await response.json();
+    const candidates = data.candidates;
+    if (candidates && candidates[0]?.content?.parts) {
+      for (const part of candidates[0].content.parts) {
+        if (part.inlineData) {
+          fs.writeFileSync(outputPath, Buffer.from(part.inlineData.data, "base64"));
+          return;
+        }
       }
     }
   }
+
   throw new Error("Gemini returned no image data");
 }
 
