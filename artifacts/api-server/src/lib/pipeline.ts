@@ -1651,7 +1651,7 @@ async function composeSectionVideo(
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
   const totalDur = audioDuration + 1;
-  const fps = 10;
+  const fps = 5;
   const totalFrames = Math.ceil(totalDur * fps);
 
   const imgStat = fs.statSync(imagePath);
@@ -1720,7 +1720,7 @@ async function composeSectionVideo(
       "-t", String(totalDur),
       "-shortest", "-movflags", "+faststart",
       outputPath,
-    ], 300000);
+    ], 600000);
   } else {
     const lowerThirdPart = lowerThird ? `,${lowerThird}` : "";
     await runFFmpeg([
@@ -1734,7 +1734,7 @@ async function composeSectionVideo(
       "-t", String(totalDur),
       "-shortest", "-movflags", "+faststart",
       outputPath,
-    ], 300000);
+    ], 600000);
   }
 
   try { fs.unlinkSync(scaledImgPath); } catch {}
@@ -2316,18 +2316,14 @@ export async function generateVideo(
         const targetW = isVertical ? 1080 : 1920;
         const targetH = isVertical ? 1920 : 1080;
         const introVideoPath = path.join(projectDir, "section_intro.mp4");
-        await new Promise<void>((resolve, reject) => {
-          const proc = require("child_process").spawn("ffmpeg", [
-            "-y", "-i", customIntroPath,
-            "-vf", `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-            "-movflags", "+faststart", "-shortest",
-            introVideoPath,
-          ]);
-          proc.stderr.on("data", () => {});
-          proc.on("close", (code: number) => code === 0 ? resolve() : reject(new Error(`FFmpeg intro re-encode failed: ${code}`)));
-        });
+        await runFFmpeg([
+          "-y", "-i", customIntroPath,
+          "-vf", `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
+          "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+          "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+          "-movflags", "+faststart", "-shortest",
+          introVideoPath,
+        ], 120000);
         sectionVideos.push(introVideoPath);
         console.log("채널 커스텀 인트로 영상 적용 완료");
       } catch (e: any) {
@@ -2574,21 +2570,17 @@ export async function recomposeVideo(
     const customIntroSrc = await getCustomIntroPath();
     const introPath = path.join(projectDir, "section_intro.mp4");
     if (customIntroSrc) {
-      const isVertical = project.videoType === "shorts";
-      const targetW = isVertical ? 1080 : 1920;
-      const targetH = isVertical ? 1920 : 1080;
-      await new Promise<void>((resolve, reject) => {
-        const proc = require("child_process").spawn("ffmpeg", [
-          "-y", "-i", customIntroSrc,
-          "-vf", `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
-          "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-          "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-          "-movflags", "+faststart", "-shortest",
-          introPath,
-        ]);
-        proc.stderr.on("data", () => {});
-        proc.on("close", (code: number) => code === 0 ? resolve() : reject(new Error(`FFmpeg intro re-encode: ${code}`)));
-      });
+      const isVerticalIntro = project.videoType === "shorts";
+      const targetW = isVerticalIntro ? 1080 : 1920;
+      const targetH = isVerticalIntro ? 1920 : 1080;
+      await runFFmpeg([
+        "-y", "-i", customIntroSrc,
+        "-vf", `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+        "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+        "-movflags", "+faststart", "-shortest",
+        introPath,
+      ], 120000);
       sectionVideos.push(introPath);
       console.log("재합성: 커스텀 인트로 적용");
     } else if (fs.existsSync(introPath)) {
