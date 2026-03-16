@@ -6,3 +6,9 @@ id = "KVLSzZ0be8m6Wx9T2VMh8"
 uri = "file://scripts/test-video-output/final_video.mp4"
 type = "video"
 title = "테스트 영상 - 영끌족의 현실 (1분 18초)"
+
+[[outputs]]
+id = "Sta0GFz5BxYbKAeuJnR-n"
+uri = "file://videoforge-source.tar.gz"
+type = "unspecified"
+title = "VideoForge 소스 코드 (tar.gz)"
