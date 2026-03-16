@@ -89,7 +89,7 @@ artifacts-monorepo/
 - **TTS voices**: Gemini TTS default voice = "Aoede" (female), system prompt in English for better voice quality. Default speed 1.25x via atempo.
 - **FFmpeg production constraints**: Minimal drawtext (section title via drawtext box, subtitle via SRT BorderStyle=4). Uses `spawn` instead of `execFile` (buffer overflow prevention). Character style = no drawtext at all.
 - **Image scaling**: `force_original_aspect_ratio=increase,crop` (fills frame, no black bars)
-- **Ken Burns zoom**: zoompan at fps=10, zoom 15% (alternating zoom-in/zoom-out/pan), smooth visible effect
+- **Ken Burns zoom**: zoompan at fps=5, zoom 15% (alternating zoom-in/zoom-out/pan). **Half-resolution optimization**: zoompan runs at 960x540 (or 540x960 for Shorts) then upscales to full resolution via bilinear scaling — ~4x faster encoding on limited CPU
 - **Gemini Image Generation**: Uses user's GEMINI_API_KEY directly (not Replit AI Integration proxy, which doesn't support image generation model). Model: `gemini-2.5-flash-preview-image-generation`
 - **Gemini TTS rate limit**: 6-second cooldown after each successful TTS call + 8-retry with progressive delays (10-30s) to stay within API rate limits
 - **Font path**: Multi-candidate resolution (`cwd/assets`, `cwd/../assets`, `cwd/../../assets`, absolute fallback) for dev/prod compatibility

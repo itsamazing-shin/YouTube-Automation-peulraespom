@@ -1650,13 +1650,15 @@ async function composeSectionVideo(
 ): Promise<void> {
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
+  const halfW = isVertical ? 540 : 960;
+  const halfH = isVertical ? 960 : 540;
   const totalDur = audioDuration + 1;
   const fps = 5;
   const totalFrames = Math.ceil(totalDur * fps);
 
   const imgStat = fs.statSync(imagePath);
   const audioStat = fs.statSync(audioPath);
-  console.log(`[composeSectionVideo] image=${imagePath} (${Math.round(imgStat.size/1024)}KB), audio=${audioPath} (${Math.round(audioStat.size/1024)}KB), dur=${audioDuration}s, ${width}x${height}, kenBurns@${fps}fps`);
+  console.log(`[composeSectionVideo] image=${imagePath} (${Math.round(imgStat.size/1024)}KB), audio=${audioPath} (${Math.round(audioStat.size/1024)}KB), dur=${audioDuration}s, ${width}x${height}, kenBurns@${fps}fps (zoompan@${halfW}x${halfH}→upscale)`);
 
   const subtitles = whisperSegments && whisperSegments.length > 0
     ? whisperSegmentsToSubtitles(whisperSegments, isVertical)
@@ -1690,12 +1692,12 @@ async function composeSectionVideo(
     yExpr = "ih/2-(ih/zoom/2)";
   } else {
     zoomExpr = "1.10";
-    const panPx = (0.10 * width / Math.max(totalFrames, 1)).toFixed(4);
+    const panPx = (0.10 * halfW / Math.max(totalFrames, 1)).toFixed(4);
     xExpr = `${panPx}*on`;
     yExpr = "ih/2-(ih/zoom/2)";
   }
 
-  const zpFilter = `zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${width}x${height}:fps=${fps}`;
+  const zpFilter = `zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=${totalFrames}:s=${halfW}x${halfH}:fps=${fps}`;
 
   const hasLogo = logoPath && fs.existsSync(logoPath);
   const logoW = isVertical ? 250 : 300;
@@ -1707,14 +1709,14 @@ async function composeSectionVideo(
   if (hasLogo) {
     const lowerThirdPart = lowerThird ? `,${lowerThird}` : "";
     await runFFmpeg([
-      "-y",
+      "-y", "-threads", "4",
       "-i", scaledImgPath,
       "-i", logoPath!,
       "-i", audioPath,
       "-filter_complex",
-      `[0:v]${zpFilter},format=yuv420p[zp];[1:v]scale=${logoW}:-1:flags=lanczos[logo];[zp][logo]overlay=W-w-20:20${lowerThirdPart}[out]`,
+      `[0:v]${zpFilter},scale=${width}:${height}:flags=bilinear,format=yuv420p[zp];[1:v]scale=${logoW}:-1:flags=lanczos[logo];[zp][logo]overlay=W-w-20:20${lowerThirdPart}[out]`,
       "-map", "[out]", "-map", "2:a",
-      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-b:a", "128k",
       "-t", String(totalDur),
@@ -1724,11 +1726,11 @@ async function composeSectionVideo(
   } else {
     const lowerThirdPart = lowerThird ? `,${lowerThird}` : "";
     await runFFmpeg([
-      "-y",
+      "-y", "-threads", "4",
       "-i", scaledImgPath,
       "-i", audioPath,
-      "-vf", `${zpFilter},format=yuv420p${lowerThirdPart}`,
-      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
+      "-vf", `${zpFilter},scale=${width}:${height}:flags=bilinear,format=yuv420p${lowerThirdPart}`,
+      "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
       "-pix_fmt", "yuv420p",
       "-c:a", "aac", "-b:a", "128k",
       "-t", String(totalDur),
